@@ -14,7 +14,7 @@ from PySide6.QtWidgets import QDialog
 
 from app.dialogs.voice_dialog import VoiceDialog
 from services.tiktok.tiktok_service import TikTokService
-from services.tts.kokoro_service import KokoroService
+from services.tts.voice_manager import VoiceManager
 
 OVERLAY_HEALTH_URL = "http://127.0.0.1:5050/health"
 OLLAMA_TAGS_URL = "http://127.0.0.1:11434/api/tags"
@@ -49,7 +49,7 @@ class PandaWorker(QThread):
                     "Ollama no responde en el puerto 11434.",
                 )
 
-            if KokoroService.is_installed():
+            if VoiceManager().is_engine_available("kokoro"):
                 self.status_changed.emit(
                     "kokoro_available",
                     "Kokoro TTS disponible.",
@@ -191,17 +191,21 @@ class AppController(QObject):
         super().__init__(parent)
         self.worker: PandaWorker | None = None
         self.current_username = ""
+        self.voice_manager = VoiceManager()
 
         data = self.read_settings()
         self.dashboard_settings = dict(data.get("dashboard", {}))
         self.tts_settings = self.normalize_tts(data.get("tts", {}))
 
-    def publish_initial_state(self) -> None:
-        self.publish_voice_settings()
-        self.kokoro_status_changed.emit(
-            "DISPONIBLE" if KokoroService.is_installed() else "NO INSTALADO",
-            "statusGreen" if KokoroService.is_installed() else "statusRed",
-        )
+   def publish_initial_state(self) -> None:
+    self.publish_voice_settings()
+
+    kokoro_available = self.voice_manager.is_engine_available("kokoro")
+
+    self.kokoro_status_changed.emit(
+        "DISPONIBLE" if kokoro_available else "NO INSTALADO",
+        "statusGreen" if kokoro_available else "statusRed",
+    )
 
     @Slot(str)
     def connect_all(self, username: str) -> None:
@@ -247,12 +251,13 @@ class AppController(QObject):
 
     @Slot()
     def change_voice(self) -> None:
-        dialog = VoiceDialog(
-            current_voice=str(self.tts_settings["voice"]),
-            current_speed=float(self.tts_settings["speed"]),
-            current_volume=float(self.tts_settings["volume"]),
-            parent=self.parent(),
-        )
+       dialog = VoiceDialog(
+    current_engine=str(self.tts_settings["engine"]),
+    current_voice=str(self.tts_settings["voice"]),
+    current_speed=float(self.tts_settings["speed"]),
+    current_volume=float(self.tts_settings["volume"]),
+    parent=self.parent(),
+)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         self.tts_settings = dialog.selected_settings()
