@@ -26,9 +26,10 @@ class PandaWorker(QThread):
     activity_received = Signal(str, str, str, str)
     error_occurred = Signal(str)
 
-    def __init__(self, username: str) -> None:
+    def __init__(self, username: str, tts_engine: str) -> None:
         super().__init__()
         self.username = username
+        self.tts_engine = tts_engine
         self.loop: asyncio.AbstractEventLoop | None = None
         self.tiktok_service: TikTokService | None = None
         self.overlay_process: subprocess.Popen | None = None
@@ -49,15 +50,16 @@ class PandaWorker(QThread):
                     "Ollama no responde en el puerto 11434.",
                 )
 
-            if VoiceManager().is_engine_available("kokoro"):
+            voice_manager = VoiceManager()
+            if voice_manager.is_engine_available(self.tts_engine):
                 self.status_changed.emit(
-                    "kokoro_available",
-                    "Kokoro TTS disponible.",
+                    "tts_available",
+                    f"Motor TTS {self.tts_engine} disponible.",
                 )
             else:
                 self.status_changed.emit(
-                    "kokoro_missing",
-                    "Kokoro TTS no está instalado.",
+                    "tts_missing",
+                    f"Motor TTS {self.tts_engine} no disponible.",
                 )
 
             if self.stop_requested:
@@ -163,7 +165,7 @@ class AppController(QObject):
     bot_status_changed = Signal(str, str)
     tiktok_status_changed = Signal(str, str)
     ollama_status_changed = Signal(str, str)
-    kokoro_status_changed = Signal(str, str)
+    tts_status_changed = Signal(str, str, str)
     connection_state_changed = Signal(str, str)
     log_message = Signal(str)
     activity_received = Signal(str, str, str, str)
@@ -195,10 +197,13 @@ class AppController(QObject):
 
     def publish_initial_state(self) -> None:
         self.publish_voice_settings()
-        kokoro_available = self.voice_manager.is_engine_available("kokoro")
-        self.kokoro_status_changed.emit(
-            "DISPONIBLE" if kokoro_available else "NO INSTALADO",
-            "statusGreen" if kokoro_available else "statusRed",
+        engine_code = str(self.tts_settings["engine"])
+        engine = self.voice_manager.get_engine(engine_code)
+        available = engine.is_available()
+        self.tts_status_changed.emit(
+            "DISPONIBLE" if available else "NO DISPONIBLE",
+            "statusGreen" if available else "statusRed",
+            engine.display_name,
         )
 
     @Slot(str)
@@ -217,7 +222,7 @@ class AppController(QObject):
         )
         self.log_message.emit(f"Iniciando PandaIA para {username}.")
 
-        self.worker = PandaWorker(username)
+        self.worker = PandaWorker(username, str(self.tts_settings["engine"]))
         self.worker.status_changed.connect(self.handle_worker_status)
         self.worker.activity_received.connect(self.forward_activity)
         self.worker.error_occurred.connect(self.handle_worker_error)
@@ -287,6 +292,7 @@ class AppController(QObject):
         self.tts_settings = dialog.selected_settings()
         self.save_tts_settings()
         self.publish_voice_settings()
+        self.publish_initial_state()
         self.log_message.emit(
             "Motor y voz guardados: "
             f"{self.tts_settings['engine']} · "
@@ -318,10 +324,8 @@ class AppController(QObject):
             self.ollama_status_changed.emit("CONECTADO", "statusGreen")
         elif status == "ollama_unavailable":
             self.ollama_status_changed.emit("NO DISPONIBLE", "statusRed")
-        elif status == "kokoro_available":
-            self.kokoro_status_changed.emit("DISPONIBLE", "statusGreen")
-        elif status == "kokoro_missing":
-            self.kokoro_status_changed.emit("NO INSTALADO", "statusRed")
+        elif status in {"tts_available", "tts_missing"}:
+            self.publish_initial_state()
         elif status in {"overlay_starting", "overlay_ready", "tiktok_connecting"}:
             self.connection_state_changed.emit("connecting", message)
         elif status == "tiktok_connected":

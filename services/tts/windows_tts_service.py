@@ -3,23 +3,15 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from dataclasses import dataclass
+
+from services.tts.base_engine import TTSEngine, TTSEngineError, VoiceOption
 
 
-class WindowsTTSServiceError(RuntimeError):
+class WindowsTTSServiceError(TTSEngineError):
     pass
 
 
-@dataclass(frozen=True)
-class WindowsVoiceOption:
-    code: str
-    display_name: str
-    gender: str
-    style: str
-    language: str
-
-
-class WindowsTTSService:
+class WindowsTTSService(TTSEngine):
     engine_id = "windows"
     display_name = "Windows SAPI"
 
@@ -40,7 +32,7 @@ class WindowsTTSService:
             check=False,
         )
 
-    def list_voices(self) -> list[WindowsVoiceOption]:
+    def list_voices(self) -> list[VoiceOption]:
         if not self.is_available():
             return []
 
@@ -72,7 +64,7 @@ $voices | ConvertTo-Json -Compress
 
         payload = json.loads(output)
         records = payload if isinstance(payload, list) else [payload]
-        voices: list[WindowsVoiceOption] = []
+        voices: list[VoiceOption] = []
 
         for record in records:
             name = str(record.get("Name", "")).strip()
@@ -96,7 +88,7 @@ $voices | ConvertTo-Json -Compress
             }.get(culture, culture or "Idioma no identificado")
 
             voices.append(
-                WindowsVoiceOption(
+                VoiceOption(
                     code=name,
                     display_name=name.replace("Microsoft ", ""),
                     gender=gender,
@@ -107,7 +99,7 @@ $voices | ConvertTo-Json -Compress
 
         return voices
 
-    def get_voice(self, code: str) -> WindowsVoiceOption:
+    def get_voice(self, code: str) -> VoiceOption:
         for voice in self.list_voices():
             if voice.code == code.strip():
                 return voice
@@ -145,3 +137,9 @@ $s.Speak('{escaped_text}')
             raise WindowsTTSServiceError(
                 result.stderr.strip() or "Windows no pudo reproducir la voz."
             )
+
+    def preview(
+        self, *, text: str, voice: str, speed: float, volume: float
+    ) -> str:
+        self.speak(text=text, voice=voice, speed=speed, volume=volume)
+        return self.display_name

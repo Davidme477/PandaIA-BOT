@@ -1,40 +1,35 @@
 from __future__ import annotations
 
 import importlib.util
-from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
+from typing import TYPE_CHECKING
 
-import numpy as np
-import soundfile as sf
+from services.tts.base_engine import TTSEngine, TTSEngineError, VoiceOption
+
+if TYPE_CHECKING:
+    import numpy as np
 
 SAMPLE_RATE = 24_000
 DEFAULT_LANGUAGE_CODE = "e"
 DEFAULT_VOICE = "ef_dora"
 
 
-class KokoroServiceError(RuntimeError):
+class KokoroServiceError(TTSEngineError):
     """Error controlado al generar audio con Kokoro."""
 
 
-@dataclass(frozen=True)
-class VoiceOption:
-    code: str
-    display_name: str
-    gender: str
-    style: str
-    language: str = "Español"
-    language_code: str = DEFAULT_LANGUAGE_CODE
-
-
 SPANISH_VOICES = (
-    VoiceOption("ef_dora", "Dora", "Femenina", "Clara y expresiva"),
-    VoiceOption("em_alex", "Alex", "Masculina", "Natural y tranquila"),
-    VoiceOption("em_santa", "Santa", "Masculina", "Profunda y cálida"),
+    VoiceOption("ef_dora", "Dora", "Femenina", "Clara y expresiva", "Español", DEFAULT_LANGUAGE_CODE),
+    VoiceOption("em_alex", "Alex", "Masculina", "Natural y tranquila", "Español", DEFAULT_LANGUAGE_CODE),
+    VoiceOption("em_santa", "Santa", "Masculina", "Profunda y cálida", "Español", DEFAULT_LANGUAGE_CODE),
 )
 
 
-class KokoroService:
+class KokoroService(TTSEngine):
+    engine_id = "kokoro"
+    display_name = "Kokoro"
+
     def __init__(self) -> None:
         self._pipelines: dict[str, object] = {}
         self._pipeline_lock = Lock()
@@ -43,8 +38,12 @@ class KokoroService:
     def is_installed() -> bool:
         return (
             importlib.util.find_spec("kokoro") is not None
+            and importlib.util.find_spec("numpy") is not None
             and importlib.util.find_spec("soundfile") is not None
         )
+
+    def is_available(self) -> bool:
+        return self.is_installed()
 
     @staticmethod
     def list_voices() -> list[VoiceOption]:
@@ -83,6 +82,11 @@ class KokoroService:
         speed: float = 1.0,
         volume: float = 1.0,
     ) -> np.ndarray:
+        try:
+            import numpy as np
+        except ImportError as error:
+            raise KokoroServiceError("NumPy no está instalado.") from error
+
         text = text.strip()
         if not text:
             raise KokoroServiceError("El texto está vacío.")
@@ -136,9 +140,29 @@ class KokoroService:
             volume=volume,
         )
         try:
+            import soundfile as sf
+
             sf.write(destination, audio, SAMPLE_RATE, subtype="PCM_16")
         except Exception as error:
             raise KokoroServiceError(
                 f"No se pudo guardar el audio: {error}"
             ) from error
         return destination
+
+    def preview(
+        self, *, text: str, voice: str, speed: float, volume: float
+    ) -> str:
+        destination = self.save_wav(
+            text=text,
+            output_path=Path("temp/kokoro/voice_preview.wav"),
+            voice=voice,
+            speed=speed,
+            volume=volume,
+        )
+        import sys
+
+        if sys.platform == "win32":
+            import winsound
+
+            winsound.PlaySound(str(destination.resolve()), winsound.SND_FILENAME)
+        return str(destination)

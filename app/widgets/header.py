@@ -18,6 +18,7 @@ class Header(QWidget):
         self.setFixedHeight(105)
 
         self.status_labels: dict[str, QLabel] = {}
+        self.status_titles: dict[str, QLabel] = {}
 
         self.build_interface()
 
@@ -57,7 +58,7 @@ class Header(QWidget):
 
         layout.addWidget(
             self.create_status_card(
-                "kokoro",
+                "tts",
                 "Kokoro TTS",
                 "NO INSTALADO",
                 "statusRed",
@@ -144,6 +145,7 @@ class Header(QWidget):
         status.setObjectName(object_name)
 
         self.status_labels[key] = status
+        self.status_titles[key] = title
 
         layout.addWidget(title)
         layout.addWidget(status)
@@ -209,13 +211,15 @@ class Header(QWidget):
             object_name,
         )
 
-    def set_kokoro_status(
+    def set_tts_status(
         self,
         text: str,
         object_name: str,
+        engine_name: str,
     ) -> None:
+        self.status_titles["tts"].setText(f"{engine_name} TTS")
         self.set_status(
-            "kokoro",
+            "tts",
             text,
             object_name,
         )

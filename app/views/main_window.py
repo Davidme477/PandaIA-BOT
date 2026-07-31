@@ -94,8 +94,8 @@ class MainWindow(QMainWindow):
         self.controller.ollama_status_changed.connect(
             self.header.set_ollama_status
         )
-        self.controller.kokoro_status_changed.connect(
-            self.header.set_kokoro_status
+        self.controller.tts_status_changed.connect(
+            self.header.set_tts_status
         )
         self.controller.connection_state_changed.connect(
             self.tiktok_view.apply_connection_state

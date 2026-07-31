@@ -1,87 +1,65 @@
 from __future__ import annotations
 
-import sys
-from dataclasses import dataclass
-from pathlib import Path
+from collections.abc import Iterable
 
-from services.tts.kokoro_service import KokoroService
-from services.tts.windows_tts_service import WindowsTTSService
-
-
-PREVIEW_FILE = Path("temp/kokoro/voice_preview.wav")
-
-
-@dataclass(frozen=True)
-class EngineOption:
-    code: str
-    display_name: str
-    available: bool
+from services.tts.base_engine import EngineOption, TTSEngine, TTSEngineError, VoiceOption
 
 
 class VoiceManager:
-    def __init__(self) -> None:
-        self.kokoro = KokoroService()
-        self.windows = WindowsTTSService()
+    def __init__(self, engines: Iterable[TTSEngine] | None = None) -> None:
+        self._engines: dict[str, TTSEngine] = {}
+        if engines is None:
+            engines = self._default_engines()
+        for engine in engines:
+            self.register_engine(engine)
+
+    @staticmethod
+    def _default_engines() -> list[TTSEngine]:
+        from services.tts.kokoro_service import KokoroService
+        from services.tts.windows_tts_service import WindowsTTSService
+
+        return [KokoroService(), WindowsTTSService()]
+
+    def register_engine(self, engine: TTSEngine) -> None:
+        code = engine.engine_id.strip().lower()
+        if not code:
+            raise TTSEngineError("El motor debe tener un código.")
+        if code in self._engines:
+            raise TTSEngineError(f"Motor duplicado: {code}")
+        self._engines[code] = engine
 
     def list_engines(self) -> list[EngineOption]:
         return [
-            EngineOption("kokoro", "Kokoro", self.kokoro.is_installed()),
-            EngineOption("windows", "Windows SAPI", self.windows.is_available()),
+            EngineOption(code, item.display_name, item.is_available())
+            for code, item in self._engines.items()
         ]
 
     def is_engine_available(self, engine: str) -> bool:
-        return {
-            "kokoro": self.kokoro.is_installed(),
-            "windows": self.windows.is_available(),
-        }.get(engine.strip().lower(), False)
+        item = self._engines.get(self._normalize(engine))
+        return item is not None and item.is_available()
 
-    def list_voices(self, engine: str):
-        engine = engine.strip().lower()
-        if engine == "kokoro":
-            return self.kokoro.list_voices()
-        if engine == "windows":
-            return self.windows.list_voices()
-        raise RuntimeError(f"Motor no registrado: {engine}")
+    def get_engine(self, engine: str, *, require_available: bool = False) -> TTSEngine:
+        code = self._normalize(engine)
+        item = self._engines.get(code)
+        if item is None:
+            raise TTSEngineError(f"Motor no registrado: {code}")
+        if require_available and not item.is_available():
+            raise TTSEngineError(f"El motor '{code}' no está disponible.")
+        return item
 
-    def get_voice(self, engine: str, voice: str):
-        engine = engine.strip().lower()
-        if engine == "kokoro":
-            return self.kokoro.get_voice(voice)
-        if engine == "windows":
-            return self.windows.get_voice(voice)
-        raise RuntimeError(f"Motor no registrado: {engine}")
+    def list_voices(self, engine: str) -> list[VoiceOption]:
+        return self.get_engine(engine, require_available=True).list_voices()
+
+    def get_voice(self, engine: str, voice: str) -> VoiceOption:
+        return self.get_engine(engine, require_available=True).get_voice(voice)
 
     def preview(
-        self,
-        *,
-        engine: str,
-        text: str,
-        voice: str,
-        speed: float,
-        volume: float,
+        self, *, engine: str, text: str, voice: str, speed: float, volume: float
     ) -> str:
-        engine = engine.strip().lower()
+        return self.get_engine(engine, require_available=True).preview(
+            text=text, voice=voice, speed=speed, volume=volume
+        )
 
-        if engine == "kokoro":
-            path = self.kokoro.save_wav(
-                text=text,
-                output_path=PREVIEW_FILE,
-                voice=voice,
-                speed=speed,
-                volume=volume,
-            )
-            if sys.platform == "win32":
-                import winsound
-                winsound.PlaySound(str(path.resolve()), winsound.SND_FILENAME)
-            return str(path)
-
-        if engine == "windows":
-            self.windows.speak(
-                text=text,
-                voice=voice,
-                speed=speed,
-                volume=volume,
-            )
-            return "Windows SAPI"
-
-        raise RuntimeError(f"Motor no registrado: {engine}")
+    @staticmethod
+    def _normalize(engine: str) -> str:
+        return engine.strip().lower()
