@@ -335,3 +335,170 @@ QScrollBar::add-line:vertical,
 QScrollBar::sub-line:vertical {
     height: 0;
 }
+
+
+/* =========================================================
+   ADMINISTRADOR DE VOCES
+   ========================================================= */
+
+#voiceDialog {
+    background-color: #080e19;
+}
+
+#voiceDialog QLabel {
+    color: #f4f4f5;
+}
+
+#voiceDialogTitle {
+    color: #ffffff;
+    font-size: 24px;
+    font-weight: 700;
+}
+
+#voiceDialogSubtitle {
+    color: #aeb6c5;
+    font-size: 14px;
+}
+
+#voiceDialogSeparator {
+    background-color: #273043;
+    border: none;
+}
+
+#voiceFieldLabel {
+    color: #d7dbe3;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+#voiceDescription {
+    color: #b9c0ce;
+    background-color: #0c1320;
+    border: 1px solid #303b50;
+    border-radius: 8px;
+    padding: 10px 12px;
+}
+
+#voiceCombo {
+    background-color: #0c1320;
+    color: #ffffff;
+    border: 1px solid #354057;
+    border-radius: 8px;
+    min-height: 44px;
+    padding: 0 12px;
+}
+
+#voiceCombo:hover,
+#voiceCombo:focus {
+    border: 1px solid #7c3aed;
+}
+
+#voiceCombo QAbstractItemView {
+    background-color: #0c1320;
+    color: #ffffff;
+    border: 1px solid #354057;
+    selection-background-color: #5b21b6;
+    selection-color: #ffffff;
+}
+
+#voicePreviewText {
+    background-color: #0c1320;
+    color: #ffffff;
+    border: 1px solid #354057;
+    border-radius: 10px;
+    padding: 12px;
+    selection-background-color: #5b21b6;
+}
+
+#voicePreviewText:focus {
+    border: 1px solid #7c3aed;
+}
+
+#voiceStatus {
+    color: #9fa8b8;
+    font-size: 13px;
+}
+
+#voiceValue {
+    color: #ffffff;
+    background-color: #161d2d;
+    border: 1px solid #354057;
+    border-radius: 7px;
+    min-width: 62px;
+    padding: 6px 10px;
+    font-weight: 700;
+}
+
+#voicePreviewButton,
+#voiceSaveButton {
+    background-color: #4c0b91;
+    color: #ffffff;
+    border: 1px solid #7527c9;
+    border-radius: 9px;
+    font-size: 15px;
+    font-weight: 700;
+    padding: 0 18px;
+}
+
+#voicePreviewButton:hover,
+#voiceSaveButton:hover {
+    background-color: #6413b8;
+    border-color: #9254ff;
+}
+
+#voicePreviewButton:pressed,
+#voiceSaveButton:pressed {
+    background-color: #350665;
+}
+
+#voicePreviewButton:disabled,
+#voiceSaveButton:disabled {
+    background-color: #272f40;
+    color: #7f8795;
+    border-color: #404b60;
+}
+
+#voiceSecondaryButton {
+    background-color: #151c2a;
+    color: #e5e7eb;
+    border: 1px solid #3b465c;
+    border-radius: 9px;
+    font-size: 15px;
+    font-weight: 600;
+    padding: 0 18px;
+}
+
+#voiceSecondaryButton:hover {
+    background-color: #222c3e;
+    border-color: #59677f;
+}
+
+#voiceSecondaryButton:disabled {
+    background-color: #202735;
+    color: #747d8c;
+    border-color: #343e50;
+}
+
+#voiceSlider::groove:horizontal {
+    height: 6px;
+    background-color: #30394d;
+    border-radius: 3px;
+}
+
+#voiceSlider::sub-page:horizontal {
+    background-color: #7c3aed;
+    border-radius: 3px;
+}
+
+#voiceSlider::handle:horizontal {
+    background-color: #ffffff;
+    border: 3px solid #7c3aed;
+    width: 18px;
+    height: 18px;
+    margin: -7px 0;
+    border-radius: 9px;
+}
+
+#voiceSlider::handle:horizontal:hover {
+    border-color: #a855f7;
+}

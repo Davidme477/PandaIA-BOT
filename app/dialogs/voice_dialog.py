@@ -7,7 +7,8 @@ from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
-    QFormLayout,
+    QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QMessageBox,
@@ -20,9 +21,9 @@ from PySide6.QtWidgets import (
 
 from services.tts.kokoro_service import (
     KokoroService,
-    KokoroServiceError,
     VoiceOption,
 )
+
 
 PREVIEW_FILE = Path("temp/kokoro/voice_preview.wav")
 DEFAULT_TEXT = (
@@ -57,13 +58,17 @@ class VoicePreviewWorker(QThread):
                 speed=self.speed,
                 volume=self.volume,
             )
+
             if sys.platform == "win32":
                 import winsound
+
                 winsound.PlaySound(
                     str(path.resolve()),
                     winsound.SND_FILENAME,
                 )
+
             self.preview_ready.emit(str(path))
+
         except Exception as error:
             self.preview_failed.emit(str(error))
 
@@ -78,44 +83,67 @@ class VoiceDialog(QDialog):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
+
+        self.setObjectName("voiceDialog")
         self.setWindowTitle("Administrador de Voces")
         self.setModal(True)
-        self.setMinimumSize(560, 540)
+        self.setMinimumSize(620, 610)
+        self.resize(680, 650)
 
         self.service = KokoroService()
         self.voices = self.service.list_voices()
         self.worker: VoicePreviewWorker | None = None
 
         self.voice_combo = QComboBox()
+        self.voice_combo.setObjectName("voiceCombo")
+
         self.description_label = QLabel()
+        self.description_label.setObjectName("voiceDescription")
         self.description_label.setWordWrap(True)
 
         self.speed_slider = QSlider(Qt.Orientation.Horizontal)
+        self.speed_slider.setObjectName("voiceSlider")
         self.speed_slider.setRange(50, 200)
-        self.speed_slider.setValue(round(current_speed * 100))
+        self.speed_slider.setValue(
+            max(50, min(200, round(current_speed * 100)))
+        )
+
         self.speed_value = QLabel()
+        self.speed_value.setObjectName("voiceValue")
 
         self.volume_slider = QSlider(Qt.Orientation.Horizontal)
+        self.volume_slider.setObjectName("voiceSlider")
         self.volume_slider.setRange(0, 100)
-        self.volume_slider.setValue(round(current_volume * 100))
-        self.volume_value = QLabel()
+        self.volume_slider.setValue(
+            max(0, min(100, round(current_volume * 100)))
+        )
 
-        self.preview_text = QTextEdit(DEFAULT_TEXT)
-        self.preview_text.setMinimumHeight(105)
+        self.volume_value = QLabel()
+        self.volume_value.setObjectName("voiceValue")
+
+        self.preview_text = QTextEdit()
+        self.preview_text.setObjectName("voicePreviewText")
+        self.preview_text.setPlainText(DEFAULT_TEXT)
+        self.preview_text.setMinimumHeight(120)
+        self.preview_text.setMaximumHeight(145)
 
         self.status_label = QLabel("Lista para probar una voz.")
+        self.status_label.setObjectName("voiceStatus")
         self.status_label.setWordWrap(True)
 
-        self.preview_button = QPushButton("▶ Probar voz")
-        self.preview_button.setObjectName("primaryButton")
-        self.preview_button.setFixedHeight(44)
+        self.preview_button = QPushButton("▶  Probar voz")
+        self.preview_button.setObjectName("voicePreviewButton")
+        self.preview_button.setFixedHeight(48)
 
         self.cancel_button = QPushButton("Cancelar")
-        self.cancel_button.setFixedHeight(44)
+        self.cancel_button.setObjectName("voiceSecondaryButton")
+        self.cancel_button.setMinimumWidth(125)
+        self.cancel_button.setFixedHeight(46)
 
-        self.save_button = QPushButton("Guardar")
-        self.save_button.setObjectName("primaryButton")
-        self.save_button.setFixedHeight(44)
+        self.save_button = QPushButton("Guardar voz")
+        self.save_button.setObjectName("voiceSaveButton")
+        self.save_button.setMinimumWidth(145)
+        self.save_button.setFixedHeight(46)
 
         self.build_ui()
         self.load_voices(current_voice)
@@ -124,62 +152,93 @@ class VoiceDialog(QDialog):
 
     def build_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setContentsMargins(24, 22, 24, 22)
-        root.setSpacing(16)
+        root.setContentsMargins(28, 26, 28, 26)
+        root.setSpacing(18)
 
         title = QLabel("Administrador de Voces")
-        title.setObjectName("panelTitle")
+        title.setObjectName("voiceDialogTitle")
+
         subtitle = QLabel(
-            "Selecciona una voz, ajusta velocidad y volumen, "
+            "Selecciona una voz, ajusta la velocidad y el volumen, "
             "y escúchala antes de guardar."
         )
+        subtitle.setObjectName("voiceDialogSubtitle")
         subtitle.setWordWrap(True)
 
         root.addWidget(title)
         root.addWidget(subtitle)
 
-        form = QFormLayout()
-        form.setSpacing(13)
-        form.addRow("Voz:", self.voice_combo)
-        form.addRow("Descripción:", self.description_label)
+        separator = QFrame()
+        separator.setObjectName("voiceDialogSeparator")
+        separator.setFixedHeight(1)
+        root.addWidget(separator)
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(16)
+        grid.setVerticalSpacing(15)
+        grid.setColumnStretch(1, 1)
+
+        grid.addWidget(self.make_label("Voz"), 0, 0)
+        grid.addWidget(self.voice_combo, 0, 1)
+
+        grid.addWidget(self.make_label("Descripción"), 1, 0)
+        grid.addWidget(self.description_label, 1, 1)
 
         speed_box = QWidget()
         speed_layout = QHBoxLayout(speed_box)
         speed_layout.setContentsMargins(0, 0, 0, 0)
+        speed_layout.setSpacing(12)
         speed_layout.addWidget(self.speed_slider, 1)
         speed_layout.addWidget(self.speed_value)
 
         volume_box = QWidget()
         volume_layout = QHBoxLayout(volume_box)
         volume_layout.setContentsMargins(0, 0, 0, 0)
+        volume_layout.setSpacing(12)
         volume_layout.addWidget(self.volume_slider, 1)
         volume_layout.addWidget(self.volume_value)
 
-        form.addRow("Velocidad:", speed_box)
-        form.addRow("Volumen:", volume_box)
-        root.addLayout(form)
+        grid.addWidget(self.make_label("Velocidad"), 2, 0)
+        grid.addWidget(speed_box, 2, 1)
 
-        root.addWidget(QLabel("Texto de prueba:"))
+        grid.addWidget(self.make_label("Volumen"), 3, 0)
+        grid.addWidget(volume_box, 3, 1)
+
+        root.addLayout(grid)
+
+        root.addWidget(self.make_label("Texto de prueba"))
         root.addWidget(self.preview_text)
         root.addWidget(self.status_label)
         root.addWidget(self.preview_button)
+
         root.addStretch()
 
         actions = QHBoxLayout()
+        actions.setSpacing(12)
         actions.addStretch()
         actions.addWidget(self.cancel_button)
         actions.addWidget(self.save_button)
+
         root.addLayout(actions)
+
+    @staticmethod
+    def make_label(text: str) -> QLabel:
+        label = QLabel(text)
+        label.setObjectName("voiceFieldLabel")
+        return label
 
     def load_voices(self, current_voice: str) -> None:
         selected = 0
+
         for index, voice in enumerate(self.voices):
             self.voice_combo.addItem(
                 f"{voice.display_name} · {voice.gender}",
                 voice.code,
             )
+
             if voice.code == current_voice:
                 selected = index
+
         self.voice_combo.setCurrentIndex(selected)
         self.update_description()
 
@@ -207,6 +266,7 @@ class VoiceDialog(QDialog):
 
     def selected_settings(self) -> dict[str, object]:
         voice = self.selected_voice()
+
         return {
             "engine": "kokoro",
             "voice": voice.code,
@@ -232,6 +292,7 @@ class VoiceDialog(QDialog):
 
     def preview_voice(self) -> None:
         text = self.preview_text.toPlainText().strip()
+
         if not text:
             QMessageBox.warning(
                 self,
@@ -239,6 +300,7 @@ class VoiceDialog(QDialog):
                 "Escribe una frase para probar la voz.",
             )
             return
+
         if self.worker is not None and self.worker.isRunning():
             return
 
@@ -246,6 +308,7 @@ class VoiceDialog(QDialog):
         self.status_label.setText(
             "Generando y reproduciendo la vista previa..."
         )
+
         self.worker = VoicePreviewWorker(
             text=text,
             voice=self.selected_voice_code(),
@@ -260,9 +323,11 @@ class VoiceDialog(QDialog):
     def set_busy(self, busy: bool) -> None:
         self.preview_button.setDisabled(busy)
         self.save_button.setDisabled(busy)
+        self.cancel_button.setDisabled(busy)
         self.voice_combo.setDisabled(busy)
         self.speed_slider.setDisabled(busy)
         self.volume_slider.setDisabled(busy)
+        self.preview_text.setDisabled(busy)
 
     def preview_ready(self, path: str) -> None:
         self.status_label.setText(
@@ -271,10 +336,15 @@ class VoiceDialog(QDialog):
 
     def preview_error(self, message: str) -> None:
         self.status_label.setText(message)
-        QMessageBox.critical(self, "Error de Kokoro", message)
+        QMessageBox.critical(
+            self,
+            "Error de Kokoro",
+            message,
+        )
 
     def preview_finished(self) -> None:
         self.set_busy(False)
+
         if self.worker is not None:
             self.worker.deleteLater()
             self.worker = None
