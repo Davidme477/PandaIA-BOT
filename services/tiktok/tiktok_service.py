@@ -30,6 +30,7 @@ OVERLAY_EVENTS_URL = "http://127.0.0.1:5050/api/events"
 StatusCallback = Callable[[str, str], None]
 ActivityCallback = Callable[[str, str, str, str], None]
 CommentCallback = Callable[[str, str], None]
+GiftCallback = Callable[[str, str, int], None]
 StatsCallback = Callable[[LiveStats], None]
 ResetCallback = Callable[[], None]
 
@@ -128,6 +129,7 @@ class TikTokService:
         status_callback: StatusCallback | None = None,
         activity_callback: ActivityCallback | None = None,
         comment_callback: CommentCallback | None = None,
+        gift_callback: GiftCallback | None = None,
         stats_callback: StatsCallback | None = None,
         reset_callback: ResetCallback | None = None,
     ) -> None:
@@ -135,6 +137,7 @@ class TikTokService:
         self.status_callback = status_callback
         self.activity_callback = activity_callback
         self.comment_callback = comment_callback
+        self.gift_callback = gift_callback
         self.stats_callback = stats_callback
         self.reset_callback = reset_callback
         self.live_state = LiveState()
@@ -387,6 +390,8 @@ class TikTokService:
                 f"@{sender}",
                 f"x{quantity}",
             )
+            if self.gift_callback is not None:
+                self.gift_callback(str(sender), gift_name, quantity)
 
             local_image = get_gift_image(
                 gift_id=gift_id,

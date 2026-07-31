@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QVBoxLayout, QWidget,
 )
 from services.ollama.ollama_service import OllamaService, OllamaServiceError
+from services.live.runtime_controls import stop_button_enabled
 from services.tiktok.live_state import LiveStats, format_count, format_elapsed
 
 CONFIG_FILE = Path("config/settings.json")
@@ -35,6 +36,7 @@ class DashboardView(QScrollArea):
         self.voice_language_label: QLabel | None = None
         self.voice_engine_label: QLabel | None = None
         self.voice_details_label: QLabel | None = None
+        self.stop_button: QPushButton | None = None
 
         content = QWidget()
         content.setObjectName("mainContent")
@@ -162,6 +164,13 @@ class DashboardView(QScrollArea):
             ("automatic_responses", "Respuestas automáticas"),
             ("autonomous_mode", "Modo IA Autónomo"),
         ]
+        tooltips = {
+            "respond_comments": "Permite que PandaIA responda comentarios del live.",
+            "read_gifts": "Agradece los regalos reales usando IA y voz.",
+            "use_memory": "Recuerda el contexto reciente de cada usuario durante este live.",
+            "automatic_responses": "Responde a todos los comentarios; desactivado, solo menciones y preguntas.",
+            "autonomous_mode": "Permite intervenciones breves después de un periodo sin actividad.",
+        }
         for key, text in controls:
             row_widget = QWidget()
             row = QHBoxLayout(row_widget)
@@ -171,18 +180,25 @@ class DashboardView(QScrollArea):
             toggle.setCheckable(True)
             toggle.setChecked(True)
             toggle.setFixedSize(43, 25)
+            toggle.setToolTip(tooltips[key])
             self.control_toggles[key] = toggle
             row.addWidget(QLabel(text))
             row.addStretch()
             row.addWidget(toggle)
             layout.addWidget(row_widget)
         layout.addStretch()
-        stop = QPushButton("Detener BOT")
-        stop.setObjectName("dangerButton")
-        stop.setFixedHeight(50)
-        stop.clicked.connect(self.stop_bot_requested.emit)
-        layout.addWidget(stop)
+        self.stop_button = QPushButton("Detener BOT")
+        self.stop_button.setObjectName("dangerButton")
+        self.stop_button.setFixedHeight(50)
+        self.stop_button.setToolTip("Desconecta el live y cancela las respuestas pendientes.")
+        self.stop_button.setEnabled(False)
+        self.stop_button.clicked.connect(self.stop_bot_requested.emit)
+        layout.addWidget(self.stop_button)
         return card
+
+    def apply_connection_state(self, state: str, _message: str) -> None:
+        if self.stop_button is not None:
+            self.stop_button.setEnabled(stop_button_enabled(state))
 
     def create_activity_card(self) -> QFrame:
         card = self.create_panel("Actividad Reciente")

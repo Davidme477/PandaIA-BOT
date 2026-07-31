@@ -86,6 +86,7 @@ class PandaWorker(QThread):
                 status_callback=self.forward_tiktok_status,
                 activity_callback=self.forward_activity,
                 comment_callback=self.forward_comment,
+                gift_callback=self.forward_gift,
                 stats_callback=self.forward_live_stats,
                 reset_callback=self.live_session_reset.emit,
             )
@@ -137,6 +138,10 @@ class PandaWorker(QThread):
             return False
 
     def forward_tiktok_status(self, status: str, message: str) -> None:
+        if status == "tiktok_connected":
+            self.response_queue.set_connected(True)
+        elif status == "tiktok_disconnected":
+            self.response_queue.set_connected(False)
         self.status_changed.emit(status, message)
 
     def forward_activity(self, icon: str, title: str, user: str, amount: str) -> None:
@@ -144,6 +149,15 @@ class PandaWorker(QThread):
 
     def forward_comment(self, username: str, comment: str) -> None:
         self.response_queue.enqueue(username, comment)
+
+    def forward_gift(self, username: str, gift_name: str, quantity: int) -> None:
+        self.response_queue.enqueue_gift(username, gift_name, quantity)
+
+    def update_setting(self, key: str, value: object) -> None:
+        self.response_queue.update_setting(key, value)
+
+    def update_tts_settings(self, values: dict[str, object]) -> None:
+        self.response_queue.controls.update_tts(values)
 
     def forward_live_stats(self, stats: LiveStats) -> None:
         self.live_stats_changed.emit(stats)
@@ -286,6 +300,8 @@ class AppController(QObject):
     def update_dashboard_setting(self, key: str, value: object) -> None:
         self.dashboard_settings[key] = value
         self.save_dashboard_settings()
+        if self.worker is not None:
+            self.worker.update_setting(key, value)
 
         setting_names = {
             "model": "Modelo de Ollama",
@@ -329,6 +345,8 @@ class AppController(QObject):
 
         self.tts_settings = dialog.selected_settings()
         self.save_tts_settings()
+        if self.worker is not None:
+            self.worker.update_tts_settings(dict(self.tts_settings))
         self.publish_voice_settings()
         self.publish_initial_state()
         self.log_message.emit(

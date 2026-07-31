@@ -100,6 +100,9 @@ class MainWindow(QMainWindow):
         self.controller.connection_state_changed.connect(
             self.tiktok_view.apply_connection_state
         )
+        self.controller.connection_state_changed.connect(
+            self.dashboard_view.apply_connection_state
+        )
         self.controller.activity_received.connect(
             self.dashboard_view.add_activity
         )
