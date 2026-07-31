@@ -12,5 +12,15 @@
         "use_memory": true,
         "automatic_responses": true,
         "autonomous_mode": true
+    },
+    "tts": {
+        "engine": "kokoro",
+        "voice": "ef_dora",
+        "display_name": "Dora",
+        "language": "Español",
+        "gender": "Femenina",
+        "style": "Clara y expresiva",
+        "speed": 1.0,
+        "volume": 1.0
     }
 }

@@ -29,6 +29,7 @@ class MainWindow(QMainWindow):
 
         self.build_interface()
         self.connect_signals()
+        self.controller.publish_initial_state()
 
     def build_interface(self) -> None:
         central_widget = QWidget()
@@ -43,7 +44,6 @@ class MainWindow(QMainWindow):
         root_layout.addWidget(self.header)
 
         body = QWidget()
-
         body_layout = QHBoxLayout(body)
         body_layout.setContentsMargins(16, 12, 16, 12)
         body_layout.setSpacing(16)
@@ -64,62 +64,47 @@ class MainWindow(QMainWindow):
         root_layout.addWidget(self.footer)
 
     def connect_signals(self) -> None:
-        # Navegación lateral
-        self.sidebar.page_selected.connect(
-            self.change_page
-        )
-
-        # Conexión y desconexión de TikTok
+        self.sidebar.page_selected.connect(self.change_page)
         self.tiktok_view.connect_requested.connect(
             self.controller.connect_all
         )
-
         self.tiktok_view.disconnect_requested.connect(
             self.controller.disconnect_all
         )
 
-        # Controles del panel principal
         self.dashboard_view.stop_bot_requested.connect(
             self.controller.disconnect_all
         )
-
         self.dashboard_view.setting_changed.connect(
             self.controller.update_dashboard_setting
         )
-
         self.dashboard_view.edit_personality_requested.connect(
             self.controller.edit_personality
         )
-
         self.dashboard_view.change_voice_requested.connect(
             self.controller.change_voice
         )
 
-        # Estados superiores
         self.controller.bot_status_changed.connect(
             self.header.set_bot_status
         )
-
         self.controller.tiktok_status_changed.connect(
             self.header.set_tiktok_status
         )
-
         self.controller.ollama_status_changed.connect(
             self.header.set_ollama_status
         )
-
         self.controller.kokoro_status_changed.connect(
             self.header.set_kokoro_status
         )
-
-        # Estado de la pantalla de TikTok
         self.controller.connection_state_changed.connect(
             self.tiktok_view.apply_connection_state
         )
-
-        # Actividad reciente de TikTok
         self.controller.activity_received.connect(
             self.dashboard_view.add_activity
+        )
+        self.controller.voice_settings_changed.connect(
+            self.dashboard_view.set_voice_info
         )
 
     def change_page(self, page_index: int) -> None:

@@ -8,7 +8,6 @@ from threading import Lock
 import numpy as np
 import soundfile as sf
 
-
 SAMPLE_RATE = 24_000
 DEFAULT_LANGUAGE_CODE = "e"
 DEFAULT_VOICE = "ef_dora"
@@ -23,20 +22,19 @@ class VoiceOption:
     code: str
     display_name: str
     gender: str
+    style: str
     language: str = "Español"
     language_code: str = DEFAULT_LANGUAGE_CODE
 
 
-SPANISH_VOICES: tuple[VoiceOption, ...] = (
-    VoiceOption("ef_dora", "Dora", "Femenina"),
-    VoiceOption("em_alex", "Alex", "Masculina"),
-    VoiceOption("em_santa", "Santa", "Masculina"),
+SPANISH_VOICES = (
+    VoiceOption("ef_dora", "Dora", "Femenina", "Clara y expresiva"),
+    VoiceOption("em_alex", "Alex", "Masculina", "Natural y tranquila"),
+    VoiceOption("em_santa", "Santa", "Masculina", "Profunda y cálida"),
 )
 
 
 class KokoroService:
-    """Servicio único para listar voces y generar audio con Kokoro."""
-
     def __init__(self) -> None:
         self._pipelines: dict[str, object] = {}
         self._pipeline_lock = Lock()
@@ -54,41 +52,27 @@ class KokoroService:
 
     @staticmethod
     def get_voice(code: str) -> VoiceOption:
-        safe_code = code.strip()
-
         for voice in SPANISH_VOICES:
-            if voice.code == safe_code:
+            if voice.code == code.strip():
                 return voice
-
-        raise KokoroServiceError(
-            f"La voz '{safe_code}' no está disponible."
-        )
+        raise KokoroServiceError(f"La voz '{code}' no está disponible.")
 
     def _get_pipeline(self, language_code: str):
-        safe_language = language_code.strip() or DEFAULT_LANGUAGE_CODE
-
+        language_code = language_code.strip() or DEFAULT_LANGUAGE_CODE
         with self._pipeline_lock:
-            pipeline = self._pipelines.get(safe_language)
-
+            pipeline = self._pipelines.get(language_code)
             if pipeline is not None:
                 return pipeline
-
             if not self.is_installed():
-                raise KokoroServiceError(
-                    "Kokoro no está instalado en el entorno actual."
-                )
-
+                raise KokoroServiceError("Kokoro no está instalado.")
             try:
                 from kokoro import KPipeline
-
-                pipeline = KPipeline(lang_code=safe_language)
+                pipeline = KPipeline(lang_code=language_code)
             except Exception as error:
                 raise KokoroServiceError(
-                    "No se pudo iniciar Kokoro. Verifica espeak-ng "
-                    "y las dependencias del entorno."
+                    "No se pudo iniciar Kokoro. Verifica espeak-ng."
                 ) from error
-
-            self._pipelines[safe_language] = pipeline
+            self._pipelines[language_code] = pipeline
             return pipeline
 
     def generate_audio(
@@ -97,48 +81,42 @@ class KokoroService:
         text: str,
         voice: str = DEFAULT_VOICE,
         speed: float = 1.0,
+        volume: float = 1.0,
     ) -> np.ndarray:
-        safe_text = text.strip()
-
-        if not safe_text:
-            raise KokoroServiceError(
-                "El texto para generar la voz está vacío."
-            )
-
+        text = text.strip()
+        if not text:
+            raise KokoroServiceError("El texto está vacío.")
         if not 0.5 <= speed <= 2.0:
-            raise KokoroServiceError(
-                "La velocidad debe estar entre 0.5 y 2.0."
-            )
+            raise KokoroServiceError("La velocidad debe estar entre 0.5 y 2.0.")
+        if not 0.0 <= volume <= 1.0:
+            raise KokoroServiceError("El volumen debe estar entre 0 y 1.")
 
-        voice_option = self.get_voice(voice)
-        pipeline = self._get_pipeline(voice_option.language_code)
-
-        audio_parts: list[np.ndarray] = []
+        option = self.get_voice(voice)
+        pipeline = self._get_pipeline(option.language_code)
+        parts: list[np.ndarray] = []
 
         try:
-            generator = pipeline(
-                safe_text,
-                voice=voice_option.code,
+            for _, _, audio in pipeline(
+                text,
+                voice=option.code,
                 speed=speed,
-            )
-
-            for _, _, audio in generator:
-                audio_array = np.asarray(audio, dtype=np.float32)
-
-                if audio_array.size:
-                    audio_parts.append(audio_array)
-
+            ):
+                array = np.asarray(audio, dtype=np.float32)
+                if array.size:
+                    parts.append(array)
         except Exception as error:
             raise KokoroServiceError(
                 f"Kokoro no pudo generar la voz: {error}"
             ) from error
 
-        if not audio_parts:
-            raise KokoroServiceError(
-                "Kokoro no devolvió audio."
-            )
+        if not parts:
+            raise KokoroServiceError("Kokoro no devolvió audio.")
 
-        return np.concatenate(audio_parts)
+        audio = np.concatenate(parts)
+        return np.clip(audio * volume, -1.0, 1.0).astype(
+            np.float32,
+            copy=False,
+        )
 
     def save_wav(
         self,
@@ -147,26 +125,20 @@ class KokoroService:
         output_path: str | Path,
         voice: str = DEFAULT_VOICE,
         speed: float = 1.0,
+        volume: float = 1.0,
     ) -> Path:
         destination = Path(output_path)
         destination.parent.mkdir(parents=True, exist_ok=True)
-
         audio = self.generate_audio(
             text=text,
             voice=voice,
             speed=speed,
+            volume=volume,
         )
-
         try:
-            sf.write(
-                destination,
-                audio,
-                SAMPLE_RATE,
-                subtype="PCM_16",
-            )
+            sf.write(destination, audio, SAMPLE_RATE, subtype="PCM_16")
         except Exception as error:
             raise KokoroServiceError(
                 f"No se pudo guardar el audio: {error}"
             ) from error
-
         return destination
