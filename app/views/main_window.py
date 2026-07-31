@@ -112,6 +112,9 @@ class MainWindow(QMainWindow):
         self.controller.live_session_reset.connect(
             self.dashboard_view.reset_live_session
         )
+        self.controller.memory_changed.connect(
+            self.dashboard_view.set_memory_snapshot
+        )
         self.controller.voice_settings_changed.connect(
             self.dashboard_view.set_voice_info
         )

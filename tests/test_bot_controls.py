@@ -120,6 +120,7 @@ class BotControlsTests(unittest.TestCase):
 
     def test_memory_is_separate_and_limited(self) -> None:
         memory = SessionMemory(max_users=2, max_exchanges=2)
+        memory.set_connected(True)
         memory.add("ana", "a1", "r1")
         memory.add("ana", "a2", "r2")
         memory.add("ana", "a3", "r3")
@@ -139,6 +140,7 @@ class BotControlsTests(unittest.TestCase):
 
     def test_enabled_memory_is_sent_only_to_same_user(self) -> None:
         queue, ollama, _ = self.make_queue(use_memory=True)
+        queue.set_connected(True)
         queue.enqueue_comment("ana", "primer mensaje")
         wait_for(lambda: len(ollama.calls) == 1)
         queue.enqueue_comment("bea", "mensaje de bea")

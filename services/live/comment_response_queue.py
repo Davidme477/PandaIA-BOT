@@ -7,7 +7,7 @@ from threading import Event, Lock, Thread
 from time import monotonic
 
 from services.live.runtime_controls import RuntimeControls
-from services.live.session_memory import SessionMemory
+from services.live.session_memory import MemoryCallback, SessionMemory
 from services.ollama.ollama_service import OllamaService
 from services.tts.voice_manager import VoiceManager
 
@@ -38,10 +38,13 @@ class CommentResponseQueue:
         ollama: OllamaService | None = None,
         voice_manager: VoiceManager | None = None,
         log_callback: LogCallback | None = None,
+        memory_callback: MemoryCallback | None = None,
         autonomous_interval: float = AUTONOMOUS_IDLE_SECONDS,
     ) -> None:
         self.controls = controls or RuntimeControls(dashboard_settings, tts_settings)
-        self.memory = memory or SessionMemory()
+        self.memory = memory or SessionMemory(on_change=memory_callback)
+        if memory is not None:
+            self.memory.set_callback(memory_callback)
         self.ollama = ollama or OllamaService()
         self.voice_manager = voice_manager or VoiceManager()
         self.log_callback = log_callback
@@ -54,6 +57,7 @@ class CommentResponseQueue:
         self._connected = False
         self._last_activity = monotonic()
         self._autonomous_sent = False
+        self.memory.set_enabled(self.controls.enabled("use_memory"))
 
     def start(self) -> None:
         with self._start_lock:
@@ -68,12 +72,14 @@ class CommentResponseQueue:
             self._connected = connected
             self._last_activity = monotonic()
             self._autonomous_sent = False
+        self.memory.set_connected(connected)
         if connected:
-            self.memory.clear()
             self.start()
 
     def update_setting(self, key: str, value: object) -> None:
         self.controls.update_dashboard(key, value)
+        if key == "use_memory":
+            self.memory.set_enabled(bool(value))
         if key == "autonomous_mode" and not bool(value):
             self._remove_kind("autonomous")
 
@@ -108,11 +114,11 @@ class CommentResponseQueue:
             self._autonomous_sent = False
 
     def stop(self, *, wait: bool = True) -> None:
+        self.memory.set_connected(False)
         self._stopped.set()
         with self._activity_lock:
             self._connected = False
         self.clear()
-        self.memory.clear()
         thread = self._thread
         if wait and thread is not None and thread.is_alive():
             thread.join(timeout=2.0)

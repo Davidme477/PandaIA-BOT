@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
 )
 from services.ollama.ollama_service import OllamaService, OllamaServiceError
 from services.live.runtime_controls import stop_button_enabled
+from services.live.session_memory import MemorySnapshot, memory_panel_values
 from services.tiktok.live_state import LiveStats, format_count, format_elapsed
 
 CONFIG_FILE = Path("config/settings.json")
@@ -37,6 +38,7 @@ class DashboardView(QScrollArea):
         self.voice_engine_label: QLabel | None = None
         self.voice_details_label: QLabel | None = None
         self.stop_button: QPushButton | None = None
+        self.memory_labels: dict[str, QLabel] = {}
 
         content = QWidget()
         content.setObjectName("mainContent")
@@ -306,19 +308,41 @@ class DashboardView(QScrollArea):
         fields = QHBoxLayout()
         fields.setSpacing(12)
         values = [
-            "Nombre del streamer:   Alex",
-            "Tema del live:   Charlando y jugando",
-            "Recuerda a:   Seguidores frecuentes",
-            "Última interacción:   hace 2 min",
+            ("status", "Estado: Desconectada"),
+            ("users", "Usuarios recordados: 0 / 100"),
+            ("exchanges", "Interacciones guardadas: 0"),
+            ("last_user", "Último usuario: Sin interacciones"),
         ]
-        for value in values:
+        for key, value in values:
             label = QLabel(value)
             label.setObjectName("memoryField")
             label.setMinimumHeight(42)
+            self.memory_labels[key] = label
             fields.addWidget(label)
         layout.addWidget(title)
         layout.addLayout(fields)
+        self.set_memory_snapshot(MemorySnapshot())
         return panel
+
+    def set_memory_snapshot(self, snapshot: MemorySnapshot) -> None:
+        values = memory_panel_values(snapshot)
+        labels = {
+            "status": f"Estado: {values['status']}",
+            "users": f"Usuarios recordados: {values['users']}",
+            "exchanges": f"Interacciones guardadas: {values['exchanges']}",
+            "last_user": f"Último usuario: {values['last_user']}",
+        }
+        for key, text in labels.items():
+            label = self.memory_labels.get(key)
+            if label is not None:
+                label.setText(text)
+        status_label = self.memory_labels.get("status")
+        if status_label is not None:
+            status_label.setObjectName(
+                "statusGreen" if values["status"] == "Activa" else "statusRed"
+            )
+            status_label.style().unpolish(status_label)
+            status_label.style().polish(status_label)
 
     def load_ollama_models(self) -> None:
         if self.model_combo is None:

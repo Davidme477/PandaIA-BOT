@@ -16,6 +16,7 @@ from app.dialogs.voice_dialog import VoiceDialog
 from services.tiktok.tiktok_service import TikTokService
 from services.tiktok.live_state import LiveStats
 from services.live.comment_response_queue import CommentResponseQueue
+from services.live.session_memory import MemorySnapshot
 from services.tts.voice_manager import VoiceManager
 
 OVERLAY_HEALTH_URL = "http://127.0.0.1:5050/health"
@@ -28,6 +29,7 @@ class PandaWorker(QThread):
     activity_received = Signal(str, str, str, str)
     live_stats_changed = Signal(object)
     live_session_reset = Signal()
+    memory_changed = Signal(object)
     error_occurred = Signal(str)
 
     def __init__(
@@ -48,6 +50,7 @@ class PandaWorker(QThread):
             dashboard_settings=dashboard_settings,
             tts_settings=tts_settings,
             log_callback=self.forward_log,
+            memory_callback=self.forward_memory,
         )
 
     def run(self) -> None:
@@ -162,6 +165,10 @@ class PandaWorker(QThread):
     def forward_live_stats(self, stats: LiveStats) -> None:
         self.live_stats_changed.emit(stats)
 
+    def forward_memory(self, snapshot: MemorySnapshot) -> None:
+        if not self.stop_requested or not snapshot.connected:
+            self.memory_changed.emit(snapshot)
+
     def forward_log(self, message: str) -> None:
         self.status_changed.emit("response_log", message)
 
@@ -213,6 +220,7 @@ class AppController(QObject):
     activity_received = Signal(str, str, str, str)
     live_stats_changed = Signal(object)
     live_session_reset = Signal()
+    memory_changed = Signal(object)
     voice_settings_changed = Signal(str, str, str, float, float)
 
     def __init__(self, parent: QObject | None = None) -> None:
@@ -277,6 +285,7 @@ class AppController(QObject):
         self.worker.activity_received.connect(self.forward_activity)
         self.worker.live_stats_changed.connect(self.live_stats_changed.emit)
         self.worker.live_session_reset.connect(self.live_session_reset.emit)
+        self.worker.memory_changed.connect(self.memory_changed.emit)
         self.worker.error_occurred.connect(self.handle_worker_error)
         self.worker.finished.connect(self.handle_worker_finished)
         self.worker.start()
