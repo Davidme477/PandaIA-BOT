@@ -152,9 +152,37 @@ class KokoroService(TTSEngine):
     def preview(
         self, *, text: str, voice: str, speed: float, volume: float
     ) -> str:
-        destination = self.save_wav(
+        return self._save_and_play(
             text=text,
             output_path=Path("temp/kokoro/voice_preview.wav"),
+            voice=voice,
+            speed=speed,
+            volume=volume,
+        )
+
+    def speak(
+        self, *, text: str, voice: str, speed: float, volume: float
+    ) -> None:
+        self._save_and_play(
+            text=text,
+            output_path=Path("temp/kokoro/live_response.wav"),
+            voice=voice,
+            speed=speed,
+            volume=volume,
+        )
+
+    def _save_and_play(
+        self,
+        *,
+        text: str,
+        output_path: Path,
+        voice: str,
+        speed: float,
+        volume: float,
+    ) -> str:
+        destination = self.save_wav(
+            text=text,
+            output_path=output_path,
             voice=voice,
             speed=speed,
             volume=volume,

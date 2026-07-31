@@ -60,6 +60,13 @@ class VoiceManager:
             text=text, voice=voice, speed=speed, volume=volume
         )
 
+    def speak(
+        self, *, engine: str, text: str, voice: str, speed: float, volume: float
+    ) -> None:
+        self.get_engine(engine, require_available=True).speak(
+            text=text, voice=voice, speed=speed, volume=volume
+        )
+
     @staticmethod
     def _normalize(engine: str) -> str:
         return engine.strip().lower()

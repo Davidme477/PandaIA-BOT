@@ -44,6 +44,13 @@ class TTSEngine(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def speak(
+        self, *, text: str, voice: str, speed: float, volume: float
+    ) -> None:
+        """Reproduce texto como parte de la ejecución normal del live."""
+        raise NotImplementedError
+
+    @abstractmethod
     def preview(
         self, *, text: str, voice: str, speed: float, volume: float
     ) -> str:

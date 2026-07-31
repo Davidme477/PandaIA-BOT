@@ -14,6 +14,7 @@ from PySide6.QtWidgets import QDialog
 
 from app.dialogs.voice_dialog import VoiceDialog
 from services.tiktok.tiktok_service import TikTokService
+from services.live.comment_response_queue import CommentResponseQueue
 from services.tts.voice_manager import VoiceManager
 
 OVERLAY_HEALTH_URL = "http://127.0.0.1:5050/health"
@@ -26,15 +27,25 @@ class PandaWorker(QThread):
     activity_received = Signal(str, str, str, str)
     error_occurred = Signal(str)
 
-    def __init__(self, username: str, tts_engine: str) -> None:
+    def __init__(
+        self,
+        username: str,
+        dashboard_settings: dict[str, object],
+        tts_settings: dict[str, object],
+    ) -> None:
         super().__init__()
         self.username = username
-        self.tts_engine = tts_engine
+        self.tts_engine = str(tts_settings.get("engine", "kokoro"))
         self.loop: asyncio.AbstractEventLoop | None = None
         self.tiktok_service: TikTokService | None = None
         self.overlay_process: subprocess.Popen | None = None
         self.overlay_started_here = False
         self.stop_requested = False
+        self.response_queue = CommentResponseQueue(
+            dashboard_settings=dashboard_settings,
+            tts_settings=tts_settings,
+            log_callback=self.forward_log,
+        )
 
     def run(self) -> None:
         try:
@@ -71,6 +82,7 @@ class PandaWorker(QThread):
                 username=self.username,
                 status_callback=self.forward_tiktok_status,
                 activity_callback=self.forward_activity,
+                comment_callback=self.forward_comment,
             )
             self.status_changed.emit(
                 "tiktok_connecting",
@@ -125,9 +137,16 @@ class PandaWorker(QThread):
     def forward_activity(self, icon: str, title: str, user: str, amount: str) -> None:
         self.activity_received.emit(icon, title, user, amount)
 
+    def forward_comment(self, username: str, comment: str) -> None:
+        self.response_queue.enqueue(username, comment)
+
+    def forward_log(self, message: str) -> None:
+        self.status_changed.emit("response_log", message)
+
     @Slot()
     def request_stop(self) -> None:
         self.stop_requested = True
+        self.response_queue.stop(wait=False)
         if self.loop is not None and self.loop.is_running() and self.tiktok_service is not None:
             asyncio.run_coroutine_threadsafe(
                 self.tiktok_service.disconnect(),
@@ -148,6 +167,7 @@ class PandaWorker(QThread):
         except Exception:
             pass
         finally:
+            self.response_queue.stop()
             self.loop.close()
             self.loop = None
 
@@ -222,7 +242,11 @@ class AppController(QObject):
         )
         self.log_message.emit(f"Iniciando PandaIA para {username}.")
 
-        self.worker = PandaWorker(username, str(self.tts_settings["engine"]))
+        self.worker = PandaWorker(
+            username,
+            dict(self.dashboard_settings),
+            dict(self.tts_settings),
+        )
         self.worker.status_changed.connect(self.handle_worker_status)
         self.worker.activity_received.connect(self.forward_activity)
         self.worker.error_occurred.connect(self.handle_worker_error)
@@ -326,6 +350,8 @@ class AppController(QObject):
             self.ollama_status_changed.emit("NO DISPONIBLE", "statusRed")
         elif status in {"tts_available", "tts_missing"}:
             self.publish_initial_state()
+        elif status == "response_log":
+            return
         elif status in {"overlay_starting", "overlay_ready", "tiktok_connecting"}:
             self.connection_state_changed.emit("connecting", message)
         elif status == "tiktok_connected":

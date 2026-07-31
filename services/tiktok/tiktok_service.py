@@ -25,6 +25,7 @@ OVERLAY_EVENTS_URL = "http://127.0.0.1:5050/api/events"
 
 StatusCallback = Callable[[str, str], None]
 ActivityCallback = Callable[[str, str, str, str], None]
+CommentCallback = Callable[[str, str], None]
 
 
 def get_first_image_url(gift: object) -> str:
@@ -120,10 +121,12 @@ class TikTokService:
         username: str,
         status_callback: StatusCallback | None = None,
         activity_callback: ActivityCallback | None = None,
+        comment_callback: CommentCallback | None = None,
     ) -> None:
         self.username = username.strip()
         self.status_callback = status_callback
         self.activity_callback = activity_callback
+        self.comment_callback = comment_callback
 
         if not self.username.startswith("@"):
             self.username = f"@{self.username}"
@@ -230,6 +233,8 @@ class TikTokService:
                 f"@{sender}",
                 "",
             )
+            if self.comment_callback is not None:
+                self.comment_callback(str(sender), comment)
 
         @self.client.on(FollowEvent)
         async def on_follow(

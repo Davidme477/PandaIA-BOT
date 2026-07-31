@@ -34,6 +34,11 @@ class FakeEngine(TTSEngine):
         )
         return "vista-previa"
 
+    def speak(
+        self, *, text: str, voice: str, speed: float, volume: float
+    ) -> None:
+        return None
+
 
 class VoiceManagerTests(unittest.TestCase):
     def test_registers_and_lists_engines(self) -> None:
