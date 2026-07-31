@@ -14,6 +14,7 @@ from PySide6.QtWidgets import QDialog
 
 from app.dialogs.voice_dialog import VoiceDialog
 from services.tiktok.tiktok_service import TikTokService
+from services.tiktok.live_state import LiveStats
 from services.live.comment_response_queue import CommentResponseQueue
 from services.tts.voice_manager import VoiceManager
 
@@ -25,6 +26,8 @@ CONFIG_FILE = Path("config/settings.json")
 class PandaWorker(QThread):
     status_changed = Signal(str, str)
     activity_received = Signal(str, str, str, str)
+    live_stats_changed = Signal(object)
+    live_session_reset = Signal()
     error_occurred = Signal(str)
 
     def __init__(
@@ -83,6 +86,8 @@ class PandaWorker(QThread):
                 status_callback=self.forward_tiktok_status,
                 activity_callback=self.forward_activity,
                 comment_callback=self.forward_comment,
+                stats_callback=self.forward_live_stats,
+                reset_callback=self.live_session_reset.emit,
             )
             self.status_changed.emit(
                 "tiktok_connecting",
@@ -140,6 +145,9 @@ class PandaWorker(QThread):
     def forward_comment(self, username: str, comment: str) -> None:
         self.response_queue.enqueue(username, comment)
 
+    def forward_live_stats(self, stats: LiveStats) -> None:
+        self.live_stats_changed.emit(stats)
+
     def forward_log(self, message: str) -> None:
         self.status_changed.emit("response_log", message)
 
@@ -189,6 +197,8 @@ class AppController(QObject):
     connection_state_changed = Signal(str, str)
     log_message = Signal(str)
     activity_received = Signal(str, str, str, str)
+    live_stats_changed = Signal(object)
+    live_session_reset = Signal()
     voice_settings_changed = Signal(str, str, str, float, float)
 
     def __init__(self, parent: QObject | None = None) -> None:
@@ -241,6 +251,8 @@ class AppController(QObject):
             f"Preparando PandaIA para {username}...",
         )
         self.log_message.emit(f"Iniciando PandaIA para {username}.")
+        self.live_session_reset.emit()
+        self.live_stats_changed.emit(LiveStats())
 
         self.worker = PandaWorker(
             username,
@@ -249,6 +261,8 @@ class AppController(QObject):
         )
         self.worker.status_changed.connect(self.handle_worker_status)
         self.worker.activity_received.connect(self.forward_activity)
+        self.worker.live_stats_changed.connect(self.live_stats_changed.emit)
+        self.worker.live_session_reset.connect(self.live_session_reset.emit)
         self.worker.error_occurred.connect(self.handle_worker_error)
         self.worker.finished.connect(self.handle_worker_finished)
         self.worker.start()

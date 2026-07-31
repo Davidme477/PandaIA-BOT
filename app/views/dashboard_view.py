@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QVBoxLayout, QWidget,
 )
 from services.ollama.ollama_service import OllamaService, OllamaServiceError
+from services.tiktok.live_state import LiveStats, format_count, format_elapsed
 
 CONFIG_FILE = Path("config/settings.json")
 
@@ -28,6 +29,8 @@ class DashboardView(QScrollArea):
         self.language_combo: QComboBox | None = None
         self.control_toggles: dict[str, QPushButton] = {}
         self.activity_layout: QVBoxLayout | None = None
+        self.activity_placeholder: QLabel | None = None
+        self.stat_labels: dict[str, QLabel] = {}
         self.voice_name_label: QLabel | None = None
         self.voice_language_label: QLabel | None = None
         self.voice_engine_label: QLabel | None = None
@@ -65,13 +68,13 @@ class DashboardView(QScrollArea):
         layout.setSpacing(0)
 
         stats = [
-            ("👥", "Espectadores", "12,582"),
-            ("♥", "Me gusta", "45,231"),
-            ("🎁", "Regalos", "3,421"),
-            ("▣", "Comentarios", "1,284"),
-            ("◷", "Tiempo en vivo", "01:25:30"),
+            ("viewers", "👥", "Espectadores", "0"),
+            ("likes", "♥", "Me gusta", "0"),
+            ("gifts", "🎁", "Regalos", "0"),
+            ("comments", "▣", "Comentarios", "0"),
+            ("elapsed", "◷", "Tiempo conectado", "00:00:00"),
         ]
-        for index, (icon, name, value) in enumerate(stats):
+        for index, (key, icon, name, value) in enumerate(stats):
             item = QWidget()
             row = QHBoxLayout(item)
             row.setContentsMargins(12, 0, 12, 0)
@@ -86,6 +89,7 @@ class DashboardView(QScrollArea):
             name_label.setObjectName("statName")
             value_label = QLabel(value)
             value_label.setObjectName("statValue")
+            self.stat_labels[key] = value_label
             texts_layout.addWidget(name_label)
             texts_layout.addWidget(value_label)
             row.addWidget(icon_label)
@@ -184,14 +188,9 @@ class DashboardView(QScrollArea):
         card = self.create_panel("Actividad Reciente")
         layout = card.layout()
         self.activity_layout = layout
-        activities = [
-            ("🌪", "Regalo Tornado", "@CarlosTikTok", "x1"),
-            ("🦁", "Regalo León", "@Maria_23", "x5"),
-            ("👤", "Nuevo Seguidor", "@Alex_Oficial", ""),
-            ("🎁", "Regalo TikTok Universe", "@SofiLive", "x1"),
-        ]
-        for values in activities:
-            layout.addWidget(self.build_activity_row(*values))
+        self.activity_placeholder = QLabel("Aún no hay actividad")
+        self.activity_placeholder.setObjectName("activityEmpty")
+        layout.addWidget(self.activity_placeholder)
         layout.addStretch()
         return card
 
@@ -220,6 +219,9 @@ class DashboardView(QScrollArea):
     def add_activity(self, icon: str, title: str, user: str, amount: str = "") -> None:
         if self.activity_layout is None:
             return
+        if self.activity_placeholder is not None:
+            self.activity_layout.removeWidget(self.activity_placeholder)
+            self.activity_placeholder.hide()
         self.activity_layout.insertWidget(
             2,
             self.build_activity_row(icon, title, user, amount),
@@ -232,6 +234,33 @@ class DashboardView(QScrollArea):
         for old in rows[4:]:
             self.activity_layout.removeWidget(old)
             old.deleteLater()
+
+    def set_live_stats(self, stats: LiveStats) -> None:
+        values = {
+            "viewers": format_count(stats.viewers),
+            "likes": format_count(stats.likes),
+            "gifts": format_count(stats.gifts),
+            "comments": format_count(stats.comments),
+            "elapsed": format_elapsed(stats.elapsed_seconds),
+        }
+        for key, value in values.items():
+            label = self.stat_labels.get(key)
+            if label is not None:
+                label.setText(value)
+
+    def reset_live_session(self) -> None:
+        self.set_live_stats(LiveStats())
+        if self.activity_layout is None:
+            return
+        for index in reversed(range(self.activity_layout.count())):
+            widget = self.activity_layout.itemAt(index).widget()
+            if widget is not None and widget.objectName() == "activityRow":
+                self.activity_layout.removeWidget(widget)
+                widget.deleteLater()
+        if self.activity_placeholder is not None:
+            self.activity_placeholder.show()
+            if self.activity_layout.indexOf(self.activity_placeholder) < 0:
+                self.activity_layout.insertWidget(2, self.activity_placeholder)
 
     def create_panel(self, title_text: str) -> QFrame:
         panel = QFrame()

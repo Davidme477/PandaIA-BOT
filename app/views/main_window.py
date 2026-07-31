@@ -103,6 +103,12 @@ class MainWindow(QMainWindow):
         self.controller.activity_received.connect(
             self.dashboard_view.add_activity
         )
+        self.controller.live_stats_changed.connect(
+            self.dashboard_view.set_live_stats
+        )
+        self.controller.live_session_reset.connect(
+            self.dashboard_view.reset_live_session
+        )
         self.controller.voice_settings_changed.connect(
             self.dashboard_view.set_voice_info
         )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Callable
 from urllib.error import HTTPError, URLError
@@ -12,12 +13,15 @@ from TikTokLive.events import (
     DisconnectEvent,
     FollowEvent,
     GiftEvent,
+    LikeEvent,
+    RoomUserSeqEvent,
 )
 
 from services.tiktok.gift_image_service import (
     get_gift_image,
     get_overlay_image_url,
 )
+from services.tiktok.live_state import LiveState, LiveStats
 
 
 TIKTOK_USERNAME = "@latidosmusicales3"
@@ -26,6 +30,8 @@ OVERLAY_EVENTS_URL = "http://127.0.0.1:5050/api/events"
 StatusCallback = Callable[[str, str], None]
 ActivityCallback = Callable[[str, str, str, str], None]
 CommentCallback = Callable[[str, str], None]
+StatsCallback = Callable[[LiveStats], None]
+ResetCallback = Callable[[], None]
 
 
 def get_first_image_url(gift: object) -> str:
@@ -122,11 +128,18 @@ class TikTokService:
         status_callback: StatusCallback | None = None,
         activity_callback: ActivityCallback | None = None,
         comment_callback: CommentCallback | None = None,
+        stats_callback: StatsCallback | None = None,
+        reset_callback: ResetCallback | None = None,
     ) -> None:
         self.username = username.strip()
         self.status_callback = status_callback
         self.activity_callback = activity_callback
         self.comment_callback = comment_callback
+        self.stats_callback = stats_callback
+        self.reset_callback = reset_callback
+        self.live_state = LiveState()
+        self._timer_task: asyncio.Task[None] | None = None
+        self._live_connected = False
 
         if not self.username.startswith("@"):
             self.username = f"@{self.username}"
@@ -163,11 +176,28 @@ class TikTokService:
                 amount,
             )
 
+    def notify_stats(self, stats: LiveStats | None = None) -> None:
+        if self.stats_callback is not None:
+            self.stats_callback(stats or self.live_state.snapshot())
+
+    async def update_elapsed(self) -> None:
+        try:
+            while True:
+                await asyncio.sleep(1)
+                self.notify_stats()
+        except asyncio.CancelledError:
+            return
+
     def register_events(self) -> None:
         @self.client.on(ConnectEvent)
         async def on_connect(
             event: ConnectEvent,
         ) -> None:
+            self._live_connected = True
+            self.notify_stats(self.live_state.connect())
+            if self.reset_callback is not None:
+                self.reset_callback()
+            self._timer_task = asyncio.create_task(self.update_elapsed())
             print("=" * 60)
             print("PANDAIA CONECTADO A TIKTOK")
             print("=" * 60)
@@ -187,6 +217,11 @@ class TikTokService:
         async def on_disconnect(
             event: DisconnectEvent,
         ) -> None:
+            self._live_connected = False
+            if self._timer_task is not None:
+                self._timer_task.cancel()
+                self._timer_task = None
+            self.notify_stats(self.live_state.disconnect())
             print("=" * 60)
             print("PANDAIA DESCONECTADO DE TIKTOK")
             print("=" * 60)
@@ -203,6 +238,8 @@ class TikTokService:
         async def on_comment(
             event: CommentEvent,
         ) -> None:
+            if not self._live_connected:
+                return
             sender = getattr(
                 event.user,
                 "unique_id",
@@ -219,6 +256,10 @@ class TikTokService:
 
             if not comment:
                 return
+
+            self.notify_stats(
+                self.live_state.add_comment(comment, f"@{sender}")
+            )
 
             print("=" * 60)
             print("COMENTARIO RECIBIDO")
@@ -240,11 +281,14 @@ class TikTokService:
         async def on_follow(
             event: FollowEvent,
         ) -> None:
+            if not self._live_connected:
+                return
             sender = getattr(
                 event.user,
                 "unique_id",
                 "usuario",
             )
+            self.live_state.add_follow(f"@{sender}")
 
             print("=" * 60)
             print("NUEVO SEGUIDOR")
@@ -254,7 +298,7 @@ class TikTokService:
 
             self.notify_activity(
                 "👤",
-                "Nuevo Seguidor",
+                "Nuevo seguidor",
                 f"@{sender}",
                 "",
             )
@@ -263,6 +307,8 @@ class TikTokService:
         async def on_gift(
             event: GiftEvent,
         ) -> None:
+            if not self._live_connected:
+                return
             gift = event.gift
 
             if gift is None:
@@ -312,6 +358,15 @@ class TikTokService:
                 event.user,
                 "unique_id",
                 "usuario",
+            )
+
+            self.notify_stats(
+                self.live_state.add_gift(
+                    name=gift_name,
+                    user=f"@{sender}",
+                    quantity=quantity,
+                    streaking=False,
+                )
             )
 
             print("=" * 60)
@@ -377,6 +432,25 @@ class TikTokService:
                 )
 
             print("=" * 60)
+
+        @self.client.on(RoomUserSeqEvent)
+        async def on_room_users(event: RoomUserSeqEvent) -> None:
+            if not self._live_connected:
+                return
+            self.notify_stats(
+                self.live_state.update_viewers(event.total)
+            )
+
+        @self.client.on(LikeEvent)
+        async def on_like(event: LikeEvent) -> None:
+            if not self._live_connected:
+                return
+            self.notify_stats(
+                self.live_state.update_likes(
+                    total=event.total,
+                    count=event.count,
+                )
+            )
 
     async def connect(self) -> None:
         await self.client.connect(
