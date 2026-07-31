@@ -86,12 +86,9 @@ class PandaWorker(QThread):
     def ensure_overlay(self) -> None:
         if self.check_url(OVERLAY_HEALTH_URL, 1):
             return
+
         project_root = Path(__file__).resolve().parents[1]
-        creation_flags = (
-            subprocess.CREATE_NO_WINDOW
-            if sys.platform == "win32"
-            else 0
-        )
+        creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
         self.overlay_process = subprocess.Popen(
             [sys.executable, "-m", "overlay.server"],
             cwd=str(project_root),
@@ -106,12 +103,10 @@ class PandaWorker(QThread):
                 raise RuntimeError("Inicio cancelado.")
             if self.check_url(OVERLAY_HEALTH_URL, 1):
                 return
-            if (
-                self.overlay_process is not None
-                and self.overlay_process.poll() is not None
-            ):
+            if self.overlay_process is not None and self.overlay_process.poll() is not None:
                 raise RuntimeError("El overlay se cerró durante el inicio.")
             time.sleep(0.2)
+
         raise RuntimeError("El overlay no respondió.")
 
     @staticmethod
@@ -125,23 +120,13 @@ class PandaWorker(QThread):
     def forward_tiktok_status(self, status: str, message: str) -> None:
         self.status_changed.emit(status, message)
 
-    def forward_activity(
-        self,
-        icon: str,
-        title: str,
-        user: str,
-        amount: str,
-    ) -> None:
+    def forward_activity(self, icon: str, title: str, user: str, amount: str) -> None:
         self.activity_received.emit(icon, title, user, amount)
 
     @Slot()
     def request_stop(self) -> None:
         self.stop_requested = True
-        if (
-            self.loop is not None
-            and self.loop.is_running()
-            and self.tiktok_service is not None
-        ):
+        if self.loop is not None and self.loop.is_running() and self.tiktok_service is not None:
             asyncio.run_coroutine_threadsafe(
                 self.tiktok_service.disconnect(),
                 self.loop,
@@ -165,10 +150,7 @@ class PandaWorker(QThread):
             self.loop = None
 
     def stop_overlay(self) -> None:
-        if (
-            self.overlay_process is None
-            or self.overlay_process.poll() is not None
-        ):
+        if self.overlay_process is None or self.overlay_process.poll() is not None:
             return
         self.overlay_process.terminate()
         try:
@@ -193,24 +175,37 @@ class AppController(QObject):
         self.current_username = ""
         self.voice_manager = VoiceManager()
 
-        data = self.read_settings()
-        self.dashboard_settings = dict(data.get("dashboard", {}))
-        self.tts_settings = self.normalize_tts(data.get("tts", {}))
+        settings = self.read_settings()
+        self.dashboard_settings: dict[str, object] = dict(
+            settings.get(
+                "dashboard",
+                {
+                    "model": "llama3:8b",
+                    "personality": "Amigable, divertida y carismática",
+                    "language": "Español",
+                    "respond_comments": True,
+                    "read_gifts": True,
+                    "use_memory": True,
+                    "automatic_responses": True,
+                    "autonomous_mode": True,
+                },
+            )
+        )
+        self.tts_settings = self.normalize_tts(settings.get("tts", {}))
 
-   def publish_initial_state(self) -> None:
-    self.publish_voice_settings()
-
-    kokoro_available = self.voice_manager.is_engine_available("kokoro")
-
-    self.kokoro_status_changed.emit(
-        "DISPONIBLE" if kokoro_available else "NO INSTALADO",
-        "statusGreen" if kokoro_available else "statusRed",
-    )
+    def publish_initial_state(self) -> None:
+        self.publish_voice_settings()
+        kokoro_available = self.voice_manager.is_engine_available("kokoro")
+        self.kokoro_status_changed.emit(
+            "DISPONIBLE" if kokoro_available else "NO INSTALADO",
+            "statusGreen" if kokoro_available else "statusRed",
+        )
 
     @Slot(str)
     def connect_all(self, username: str) -> None:
         if self.worker is not None and self.worker.isRunning():
             return
+
         self.current_username = username
         self.bot_status_changed.emit("INICIANDO", "statusRed")
         self.tiktok_status_changed.emit("CONECTANDO", "statusRed")
@@ -220,6 +215,8 @@ class AppController(QObject):
             "connecting",
             f"Preparando PandaIA para {username}...",
         )
+        self.log_message.emit(f"Iniciando PandaIA para {username}.")
+
         self.worker = PandaWorker(username)
         self.worker.status_changed.connect(self.handle_worker_status)
         self.worker.activity_received.connect(self.forward_activity)
@@ -232,40 +229,68 @@ class AppController(QObject):
         if self.worker is None:
             self.set_disconnected("PandaIA ya está desconectado.")
             return
+
         self.connection_state_changed.emit(
             "disconnecting",
             "Desconectando PandaIA...",
         )
         self.bot_status_changed.emit("DETENIENDO", "statusRed")
         self.tiktok_status_changed.emit("DESCONECTANDO", "statusRed")
+        self.log_message.emit("Desconectando PandaIA.")
         self.worker.request_stop()
 
     @Slot(str, object)
     def update_dashboard_setting(self, key: str, value: object) -> None:
         self.dashboard_settings[key] = value
-        self.log_message.emit(f"{key}: {value}")
+        self.save_dashboard_settings()
+
+        setting_names = {
+            "model": "Modelo de Ollama",
+            "personality": "Personalidad",
+            "language": "Idioma",
+            "respond_comments": "Responder a comentarios",
+            "read_gifts": "Leer regalos en voz alta",
+            "use_memory": "Usar memoria",
+            "automatic_responses": "Respuestas automáticas",
+            "autonomous_mode": "Modo IA autónomo",
+        }
+        name = setting_names.get(key, key)
+        status = "Activado" if value is True else "Desactivado" if value is False else str(value)
+        self.log_message.emit(f"{name}: {status}")
 
     @Slot()
     def edit_personality(self) -> None:
-        self.log_message.emit("Editar personalidad seleccionado.")
+        current_personality = str(
+            self.dashboard_settings.get(
+                "personality",
+                "Amigable, divertida y carismática",
+            )
+        )
+        self.log_message.emit(
+            "Editar personalidad seleccionado. "
+            f"Personalidad actual: {current_personality}"
+        )
 
     @Slot()
     def change_voice(self) -> None:
-       dialog = VoiceDialog(
-    current_engine=str(self.tts_settings["engine"]),
-    current_voice=str(self.tts_settings["voice"]),
-    current_speed=float(self.tts_settings["speed"]),
-    current_volume=float(self.tts_settings["volume"]),
-    parent=self.parent(),
-)
+        dialog = VoiceDialog(
+            current_engine=str(self.tts_settings["engine"]),
+            current_voice=str(self.tts_settings["voice"]),
+            current_speed=float(self.tts_settings["speed"]),
+            current_volume=float(self.tts_settings["volume"]),
+            parent=self.parent(),
+        )
+
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
+
         self.tts_settings = dialog.selected_settings()
         self.save_tts_settings()
         self.publish_voice_settings()
-        self.kokoro_status_changed.emit("DISPONIBLE", "statusGreen")
         self.log_message.emit(
-            f"Voz guardada: {self.tts_settings['display_name']}"
+            "Motor y voz guardados: "
+            f"{self.tts_settings['engine']} · "
+            f"{self.tts_settings['display_name']}"
         )
 
     def publish_voice_settings(self) -> None:
@@ -278,18 +303,17 @@ class AppController(QObject):
         )
 
     @Slot(str, str, str, str)
-    def forward_activity(
-        self,
-        icon: str,
-        title: str,
-        user: str,
-        amount: str,
-    ) -> None:
+    def forward_activity(self, icon: str, title: str, user: str, amount: str) -> None:
         self.activity_received.emit(icon, title, user, amount)
+        activity_text = f"{title} — {user}"
+        if amount:
+            activity_text += f" — {amount}"
+        self.log_message.emit(activity_text)
 
     @Slot(str, str)
     def handle_worker_status(self, status: str, message: str) -> None:
         self.log_message.emit(message)
+
         if status == "ollama_connected":
             self.ollama_status_changed.emit("CONECTADO", "statusGreen")
         elif status == "ollama_unavailable":
@@ -310,6 +334,7 @@ class AppController(QObject):
     @Slot(str)
     def handle_worker_error(self, error_message: str) -> None:
         message = f"No se pudo iniciar PandaIA: {error_message}"
+        self.log_message.emit(message)
         self.bot_status_changed.emit("ERROR", "statusRed")
         self.tiktok_status_changed.emit("DESCONECTADO", "statusRed")
         self.connection_state_changed.emit("error", message)
@@ -330,24 +355,30 @@ class AppController(QObject):
         self.bot_status_changed.emit("DESCONECTADO", "statusRed")
         self.tiktok_status_changed.emit("DESCONECTADO", "statusRed")
         self.connection_state_changed.emit("disconnected", message)
+        self.log_message.emit(message)
+
+    def save_dashboard_settings(self) -> None:
+        settings = self.read_settings()
+        settings["dashboard"] = self.dashboard_settings
+        self.write_settings(settings)
 
     def save_tts_settings(self) -> None:
-        data = self.read_settings()
-        data["tts"] = self.tts_settings
-        self.write_settings(data)
+        settings = self.read_settings()
+        settings["tts"] = self.tts_settings
+        self.write_settings(settings)
 
     @staticmethod
-    def normalize_tts(raw: object) -> dict[str, object]:
-        data = raw if isinstance(raw, dict) else {}
+    def normalize_tts(raw_settings: object) -> dict[str, object]:
+        settings = raw_settings if isinstance(raw_settings, dict) else {}
         return {
-            "engine": str(data.get("engine", "kokoro")),
-            "voice": str(data.get("voice", "ef_dora")),
-            "display_name": str(data.get("display_name", "Dora")),
-            "language": str(data.get("language", "Español")),
-            "gender": str(data.get("gender", "Femenina")),
-            "style": str(data.get("style", "Clara y expresiva")),
-            "speed": float(data.get("speed", 1.0)),
-            "volume": float(data.get("volume", 1.0)),
+            "engine": str(settings.get("engine", "kokoro")),
+            "voice": str(settings.get("voice", "ef_dora")),
+            "display_name": str(settings.get("display_name", "Dora")),
+            "language": str(settings.get("language", "Español")),
+            "gender": str(settings.get("gender", "Femenina")),
+            "style": str(settings.get("style", "Clara y expresiva")),
+            "speed": float(settings.get("speed", 1.0)),
+            "volume": float(settings.get("volume", 1.0)),
         }
 
     @staticmethod
@@ -360,10 +391,10 @@ class AppController(QObject):
             return {}
 
     @staticmethod
-    def write_settings(data: dict) -> None:
+    def write_settings(settings: dict) -> None:
         CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
         CONFIG_FILE.write_text(
-            json.dumps(data, indent=4, ensure_ascii=False),
+            json.dumps(settings, indent=4, ensure_ascii=False),
             encoding="utf-8",
         )
 
