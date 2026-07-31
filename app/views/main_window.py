@@ -118,11 +118,15 @@ class MainWindow(QMainWindow):
         self.controller.voice_settings_changed.connect(
             self.dashboard_view.set_voice_info
         )
+        self.controller.dashboard_settings_changed.connect(
+            self.dashboard_view.apply_dashboard_settings
+        )
 
     def change_page(self, page_index: int) -> None:
         if page_index < self.pages.count():
             self.pages.setCurrentIndex(page_index)
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        self.dashboard_view.shutdown_workers()
         self.controller.shutdown()
         event.accept()

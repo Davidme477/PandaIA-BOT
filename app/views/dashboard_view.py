@@ -1,17 +1,29 @@
-import json
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QVBoxLayout, QWidget,
 )
 from services.ollama.ollama_service import OllamaService, OllamaServiceError
+from services.ollama.personalities import PERSONALITY_NAMES, dashboard_defaults
+from config.settings_store import read_settings, write_settings_atomic
 from services.live.runtime_controls import stop_button_enabled
 from services.live.session_memory import MemorySnapshot, memory_panel_values
 from services.tiktok.live_state import LiveStats, format_count, format_elapsed
 
 CONFIG_FILE = Path("config/settings.json")
+
+
+class ModelListWorker(QThread):
+    loaded = Signal(list)
+    failed = Signal(str)
+
+    def run(self) -> None:
+        try:
+            self.loaded.emit(OllamaService(timeout=5.0).list_models())
+        except OllamaServiceError as error:
+            self.failed.emit(str(error))
 
 
 class DashboardView(QScrollArea):
@@ -29,6 +41,9 @@ class DashboardView(QScrollArea):
         self.model_combo: QComboBox | None = None
         self.personality_combo: QComboBox | None = None
         self.language_combo: QComboBox | None = None
+        self.refresh_models_button: QPushButton | None = None
+        self.model_worker: ModelListWorker | None = None
+        self._suppress_settings = False
         self.control_toggles: dict[str, QPushButton] = {}
         self.activity_layout: QVBoxLayout | None = None
         self.activity_placeholder: QLabel | None = None
@@ -58,10 +73,10 @@ class DashboardView(QScrollArea):
         layout.addStretch()
         self.setWidget(content)
 
-        self.load_ollama_models()
         self.load_dashboard_settings()
         self.load_voice_settings()
         self.connect_dashboard_signals()
+        self.load_ollama_models()
 
     def create_statistics(self) -> QFrame:
         frame = QFrame()
@@ -111,14 +126,16 @@ class DashboardView(QScrollArea):
         layout = card.layout()
         layout.addWidget(QLabel("Modelo IA (Ollama)"))
         self.model_combo = QComboBox()
-        layout.addWidget(self.model_combo)
+        self.refresh_models_button = QPushButton("Actualizar")
+        self.refresh_models_button.setObjectName("voiceSecondaryButton")
+        self.refresh_models_button.setFixedHeight(38)
+        model_row = QHBoxLayout()
+        model_row.addWidget(self.model_combo, 1)
+        model_row.addWidget(self.refresh_models_button)
+        layout.addLayout(model_row)
         layout.addWidget(QLabel("Personalidad"))
         self.personality_combo = QComboBox()
-        self.personality_combo.addItems([
-            "Amigable, divertida y carismática",
-            "Profesional",
-            "Entusiasta",
-        ])
+        self.personality_combo.addItems(PERSONALITY_NAMES)
         layout.addWidget(self.personality_combo)
         layout.addWidget(QLabel("Idioma"))
         self.language_combo = QComboBox()
@@ -345,27 +362,60 @@ class DashboardView(QScrollArea):
             status_label.style().polish(status_label)
 
     def load_ollama_models(self) -> None:
+        if self.model_combo is None or (
+            self.model_worker is not None and self.model_worker.isRunning()
+        ):
+            return
+        if self.refresh_models_button is not None:
+            self.refresh_models_button.setEnabled(False)
+        self.model_worker = ModelListWorker()
+        self.model_worker.loaded.connect(self.models_loaded)
+        self.model_worker.failed.connect(self.models_failed)
+        self.model_worker.finished.connect(self.model_refresh_finished)
+        self.model_worker.start()
+
+    def models_loaded(self, models: list[str]) -> None:
         if self.model_combo is None:
             return
+        raw_dashboard = self.read_settings().get("dashboard", {})
+        saved = str(raw_dashboard.get("model", "")) if isinstance(raw_dashboard, dict) else ""
+        self._suppress_settings = True
         self.model_combo.clear()
-        try:
-            models = OllamaService(timeout=5.0).list_models()
-        except OllamaServiceError:
-            self.model_combo.addItem("Ollama no disponible")
-            self.model_combo.setEnabled(False)
-            return
-        if not models:
+        if models:
+            self.model_combo.addItems(models)
+            self.model_combo.setEnabled(True)
+            index = self.model_combo.findText(saved)
+            self.model_combo.setCurrentIndex(index if index >= 0 else 0)
+        else:
             self.model_combo.addItem("No hay modelos instalados")
             self.model_combo.setEnabled(False)
+        self._suppress_settings = False
+        if models and self.model_combo.currentText() != saved:
+            self.handle_setting_change("model", self.model_combo.currentText())
+
+    def models_failed(self, _message: str) -> None:
+        if self.model_combo is None:
             return
-        self.model_combo.setEnabled(True)
-        self.model_combo.addItems(models)
+        self._suppress_settings = True
+        self.model_combo.clear()
+        self.model_combo.addItem("Ollama no disponible")
+        self.model_combo.setEnabled(False)
+        self._suppress_settings = False
+
+    def model_refresh_finished(self) -> None:
+        if self.refresh_models_button is not None:
+            self.refresh_models_button.setEnabled(True)
+        if self.model_worker is not None:
+            self.model_worker.deleteLater()
+            self.model_worker = None
 
     def connect_dashboard_signals(self) -> None:
         if self.model_combo is not None:
             self.model_combo.currentTextChanged.connect(
                 lambda value: self.handle_setting_change("model", value)
             )
+        if self.refresh_models_button is not None:
+            self.refresh_models_button.clicked.connect(self.load_ollama_models)
         if self.personality_combo is not None:
             self.personality_combo.currentTextChanged.connect(
                 lambda value: self.handle_setting_change("personality", value)
@@ -381,12 +431,15 @@ class DashboardView(QScrollArea):
             )
 
     def handle_setting_change(self, key: str, value: object) -> None:
+        if self._suppress_settings:
+            return
         self.save_dashboard_settings()
         self.setting_changed.emit(key, value)
 
     def load_dashboard_settings(self) -> None:
         data = self.read_settings()
-        dashboard = data.get("dashboard", {})
+        raw_dashboard = data.get("dashboard", {})
+        dashboard = dashboard_defaults(raw_dashboard if isinstance(raw_dashboard, dict) else {})
         saved_model = str(dashboard.get("model", "")).strip()
         if (
             self.model_combo is not None
@@ -397,7 +450,7 @@ class DashboardView(QScrollArea):
             self.model_combo.setCurrentIndex(index if index >= 0 else 0)
         self.set_combo_value(
             self.personality_combo,
-            str(dashboard.get("personality", "Amigable, divertida y carismática")),
+            str(dashboard.get("personality", "Amigable")),
         )
         self.set_combo_value(
             self.language_combo,
@@ -410,15 +463,27 @@ class DashboardView(QScrollArea):
         if not all((self.model_combo, self.personality_combo, self.language_combo)):
             return
         data = self.read_settings()
-        dashboard = {
-            "model": self.model_combo.currentText(),
-            "personality": self.personality_combo.currentText(),
-            "language": self.language_combo.currentText(),
-        }
+        raw_dashboard = data.get("dashboard", {})
+        dashboard = dict(raw_dashboard) if isinstance(raw_dashboard, dict) else {}
+        if self.model_combo.isEnabled():
+            dashboard["model"] = self.model_combo.currentText()
+        dashboard["personality"] = self.personality_combo.currentText()
+        dashboard["language"] = self.language_combo.currentText()
         for key, toggle in self.control_toggles.items():
             dashboard[key] = toggle.isChecked()
         data["dashboard"] = dashboard
         self.write_settings(data)
+
+    def apply_dashboard_settings(self, settings: dict[str, object]) -> None:
+        self._suppress_settings = True
+        self.set_combo_value(self.personality_combo, str(settings.get("personality", "Amigable")))
+        self.set_combo_value(self.language_combo, str(settings.get("language", "Español")))
+        self._suppress_settings = False
+
+    def shutdown_workers(self) -> None:
+        if self.model_worker is not None and self.model_worker.isRunning():
+            self.model_worker.requestInterruption()
+            self.model_worker.wait(5500)
 
     def load_voice_settings(self) -> None:
         tts = self.read_settings().get("tts", {})
@@ -458,17 +523,8 @@ class DashboardView(QScrollArea):
 
     @staticmethod
     def read_settings() -> dict:
-        if not CONFIG_FILE.exists():
-            return {}
-        try:
-            return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return {}
+        return read_settings(CONFIG_FILE)
 
     @staticmethod
     def write_settings(data: dict) -> None:
-        CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-        CONFIG_FILE.write_text(
-            json.dumps(data, indent=4, ensure_ascii=False),
-            encoding="utf-8",
-        )
+        write_settings_atomic(CONFIG_FILE, data)

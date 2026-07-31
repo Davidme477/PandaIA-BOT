@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import subprocess
 import sys
 import time
@@ -13,11 +12,14 @@ from PySide6.QtCore import QObject, QThread, Signal, Slot
 from PySide6.QtWidgets import QDialog
 
 from app.dialogs.voice_dialog import VoiceDialog
+from app.dialogs.personality_dialog import PersonalityDialog
+from config.settings_store import read_settings, write_settings_atomic
 from services.tiktok.tiktok_service import TikTokService
 from services.tiktok.live_state import LiveStats
 from services.live.comment_response_queue import CommentResponseQueue
 from services.live.session_memory import MemorySnapshot
 from services.tts.voice_manager import VoiceManager
+from services.ollama.personalities import dashboard_defaults
 
 OVERLAY_HEALTH_URL = "http://127.0.0.1:5050/health"
 OLLAMA_TAGS_URL = "http://127.0.0.1:11434/api/tags"
@@ -222,6 +224,7 @@ class AppController(QObject):
     live_session_reset = Signal()
     memory_changed = Signal(object)
     voice_settings_changed = Signal(str, str, str, float, float)
+    dashboard_settings_changed = Signal(object)
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -230,20 +233,9 @@ class AppController(QObject):
         self.voice_manager = VoiceManager()
 
         settings = self.read_settings()
-        self.dashboard_settings: dict[str, object] = dict(
-            settings.get(
-                "dashboard",
-                {
-                    "model": "llama3:8b",
-                    "personality": "Amigable, divertida y carismática",
-                    "language": "Español",
-                    "respond_comments": True,
-                    "read_gifts": True,
-                    "use_memory": True,
-                    "automatic_responses": True,
-                    "autonomous_mode": True,
-                },
-            )
+        raw_dashboard = settings.get("dashboard", {})
+        self.dashboard_settings = dashboard_defaults(
+            raw_dashboard if isinstance(raw_dashboard, dict) else {}
         )
         self.tts_settings = self.normalize_tts(settings.get("tts", {}))
 
@@ -328,15 +320,26 @@ class AppController(QObject):
 
     @Slot()
     def edit_personality(self) -> None:
-        current_personality = str(
-            self.dashboard_settings.get(
-                "personality",
-                "Amigable, divertida y carismática",
-            )
+        dialog = PersonalityDialog(
+            model=str(self.dashboard_settings.get("model", "")),
+            language=str(self.dashboard_settings.get("language", "Español")),
+            custom_name=str(
+                self.dashboard_settings.get("custom_personality_name", "Mi personalidad")
+            ),
+            custom_prompt=str(self.dashboard_settings.get("custom_personality_prompt", "")),
+            parent=self.parent(),
         )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        values = dialog.settings()
+        self.dashboard_settings.update(values)
+        self.save_dashboard_settings()
+        if self.worker is not None:
+            for key, value in values.items():
+                self.worker.update_setting(key, value)
+        self.dashboard_settings_changed.emit(dict(self.dashboard_settings))
         self.log_message.emit(
-            "Editar personalidad seleccionado. "
-            f"Personalidad actual: {current_personality}"
+            f"Personalidad guardada: {values['custom_personality_name']}"
         )
 
     @Slot()
@@ -454,20 +457,11 @@ class AppController(QObject):
 
     @staticmethod
     def read_settings() -> dict:
-        if not CONFIG_FILE.exists():
-            return {}
-        try:
-            return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return {}
+        return read_settings(CONFIG_FILE)
 
     @staticmethod
     def write_settings(settings: dict) -> None:
-        CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-        CONFIG_FILE.write_text(
-            json.dumps(settings, indent=4, ensure_ascii=False),
-            encoding="utf-8",
-        )
+        write_settings_atomic(CONFIG_FILE, settings)
 
     def shutdown(self) -> None:
         if self.worker is None:

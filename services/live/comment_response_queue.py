@@ -9,6 +9,7 @@ from time import monotonic
 from services.live.runtime_controls import RuntimeControls
 from services.live.session_memory import MemoryCallback, SessionMemory
 from services.ollama.ollama_service import OllamaService
+from services.ollama.personalities import build_system_prompt
 from services.tts.voice_manager import VoiceManager
 
 
@@ -175,7 +176,7 @@ class CommentResponseQueue:
             answer = self.ollama.generate(
                 model=str(dashboard.get("model", "")),
                 prompt=prompt,
-                system_prompt=self._system_prompt(dashboard),
+                system_prompt=build_system_prompt(dashboard),
             )
         except Exception as error:
             self._log(f"Error de Ollama: {error}")
@@ -211,16 +212,6 @@ class CommentResponseQueue:
         return (
             f"El usuario @{request.username.lstrip('@')} escribió: {request.text}"
             f"{context}\nRespóndele directamente."
-        )
-
-    @staticmethod
-    def _system_prompt(dashboard: Mapping[str, object]) -> str:
-        return (
-            "Eres PandaIA, asistente de un TikTok Live. "
-            f"Tu personalidad es: {dashboard.get('personality', 'Amigable')}. "
-            f"Responde en {dashboard.get('language', 'Español')}. "
-            "Responde de forma breve, natural y apropiada para decirse en voz alta. "
-            "No uses listas, Markdown ni explicaciones largas."
         )
 
     def _maybe_autonomous(self) -> None:
