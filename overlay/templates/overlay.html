@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>PandaIA Overlay</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/overlay.css') }}"
+    >
+</head>
+
+<body>
+    <main
+        id="overlay-root"
+        aria-live="polite"
+        aria-atomic="true"
+    >
+        <section id="gift-stage">
+
+            <div id="ambient-light"></div>
+            <div id="flash-effect"></div>
+
+            <article
+                id="gift-container"
+                class="gift-container"
+                aria-hidden="true"
+            >
+                <div id="gift-glow"></div>
+
+                <div id="gift-ring">
+                    <div id="gift-content">
+                        <img
+                            id="gift-image"
+                            src=""
+                            alt=""
+                            draggable="false"
+                        >
+                    </div>
+                </div>
+
+                <div id="gift-info">
+                    <span id="gift-sender"></span>
+                    <strong id="gift-name"></strong>
+                </div>
+            </article>
+
+        </section>
+    </main>
+
+    <script
+        src="{{ url_for('static', filename='js/overlay.js') }}"
+    ></script>
+</body>
+</html>

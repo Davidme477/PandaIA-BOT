@@ -1,0 +1,16 @@
+{
+    "tiktok": {
+        "username": "@latidosmusicales3",
+        "remember_user": true
+    },
+    "dashboard": {
+        "model": "chico-ia:latest",
+        "personality": "Entusiasta",
+        "language": "Español",
+        "respond_comments": true,
+        "read_gifts": true,
+        "use_memory": true,
+        "automatic_responses": true,
+        "autonomous_mode": true
+    }
+}

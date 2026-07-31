@@ -1,0 +1,337 @@
+* {
+    font-family: "Segoe UI";
+    font-size: 14px;
+    color: #f4f4f5;
+}
+
+QMainWindow,
+#centralWidget {
+    background-color: #060b15;
+}
+
+#header {
+    background-color: #050914;
+    border-bottom: 1px solid #20283a;
+}
+
+#logo {
+    background-color: #17072e;
+    border: 1px solid #6d28d9;
+    border-radius: 22px;
+    font-size: 38px;
+}
+
+#brandTitle {
+    font-size: 30px;
+    font-weight: 700;
+}
+
+#brandSubtitle {
+    color: #e4e4e7;
+    font-size: 15px;
+}
+
+#headerStatusCard {
+    background-color: #080d17;
+    border: 1px solid #30394d;
+    border-radius: 10px;
+}
+
+#statusCardTitle {
+    color: #e5e7eb;
+    font-size: 13px;
+}
+
+#statusGreen {
+    color: #22c55e;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+#statusRed {
+    color: #ff2638;
+    font-size: 17px;
+    font-weight: 700;
+}
+
+#headerIconButton {
+    background-color: transparent;
+    border: none;
+    font-size: 25px;
+}
+
+#headerIconButton:hover {
+    color: #a855f7;
+}
+
+#headerButtonText {
+    font-size: 12px;
+    color: #e5e7eb;
+}
+
+#windowButton,
+#closeButton {
+    background-color: #2e0863;
+    border: none;
+    border-radius: 10px;
+    font-size: 28px;
+    font-weight: 600;
+}
+
+#windowButton:hover {
+    background-color: #4c1298;
+}
+
+#closeButton:hover {
+    background-color: #b91c1c;
+}
+
+#sidebar {
+    background-color: #070d18;
+    border: 1px solid #293246;
+    border-radius: 12px;
+}
+
+#sidebarButton {
+    background-color: transparent;
+    border: none;
+    border-radius: 8px;
+    padding-left: 15px;
+    text-align: left;
+    font-size: 15px;
+}
+
+#sidebarButton:hover {
+    background-color: #151027;
+}
+
+#sidebarButton:checked {
+    background-color: #3b0878;
+    border: 1px solid #6520b9;
+}
+
+#profileCard {
+    background-color: #080e19;
+    border: 1px solid #293246;
+    border-radius: 12px;
+}
+
+#profilePanda {
+    font-size: 70px;
+}
+
+#profileName {
+    font-size: 29px;
+    font-weight: 700;
+}
+
+#profileVersion {
+    color: #d4d4d8;
+}
+
+#contentStack,
+#mainContent,
+#contentScroll,
+#contentScroll > QWidget > QWidget {
+    background-color: transparent;
+}
+
+#statisticsPanel,
+#dashboardCard,
+#memoryPanel,
+#tiktokPanel {
+    background-color: #080e19;
+    border: 1px solid #2a3448;
+    border-radius: 12px;
+}
+
+#statIcon {
+    font-size: 32px;
+}
+
+#statName {
+    color: #e5e7eb;
+}
+
+#statValue {
+    font-size: 22px;
+    font-weight: 600;
+}
+
+#verticalSeparator,
+#horizontalSeparator,
+#bottomSeparator {
+    background-color: #273043;
+    border: none;
+}
+
+#panelTitle {
+    font-size: 18px;
+    font-weight: 700;
+}
+
+QComboBox,
+QLineEdit {
+    background-color: #0c1320;
+    border: 1px solid #354057;
+    border-radius: 8px;
+    min-height: 42px;
+    padding: 0 12px;
+}
+
+QComboBox:hover,
+QLineEdit:focus {
+    border: 1px solid #7c3aed;
+}
+
+QComboBox QAbstractItemView {
+    background-color: #0c1320;
+    border: 1px solid #354057;
+    selection-background-color: #5b21b6;
+}
+
+#primaryButton {
+    background-color: #3b0878;
+    border: 1px solid #6520b9;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+#primaryButton:hover {
+    background-color: #5110a0;
+}
+
+#dangerButton {
+    background-color: #a0000d;
+    border: 1px solid #d10b1d;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+#dangerButton:hover {
+    background-color: #c10b1a;
+}
+
+#toggleButton {
+    background-color: #7128e8;
+    border: 1px solid #9254ff;
+    border-radius: 12px;
+    color: white;
+}
+
+#toggleButton:!checked {
+    background-color: #272f40;
+    border-color: #404b60;
+}
+
+#voiceVisual {
+    color: #d946ef;
+    font-size: 28px;
+    background-color: #17072e;
+    border-radius: 14px;
+}
+
+#activityRow {
+    border-bottom: 1px solid #242d3f;
+}
+
+#activityIcon {
+    font-size: 32px;
+}
+
+#activityUser {
+    color: #c7cbd3;
+}
+
+#activityAmount {
+    color: #d946ef;
+    font-size: 24px;
+    font-weight: 700;
+}
+
+#memoryField {
+    background-color: #101629;
+    border-radius: 7px;
+    padding: 0 12px;
+}
+
+#pageTitle {
+    font-size: 27px;
+    font-weight: 700;
+}
+
+#pageSubtitle,
+#helperText {
+    color: #aeb6c5;
+}
+
+QCheckBox {
+    spacing: 10px;
+}
+
+QCheckBox::indicator {
+    width: 20px;
+    height: 20px;
+    border: 1px solid #4b5568;
+    border-radius: 5px;
+    background-color: #0c1320;
+}
+
+QCheckBox::indicator:checked {
+    background-color: #7c3aed;
+    border: 1px solid #9d6cff;
+}
+
+#connectionDisconnected,
+#errorMessage {
+    color: #ff4d5d;
+    font-weight: 700;
+}
+
+#connectionConnected,
+#successMessage {
+    color: #22c55e;
+    font-weight: 700;
+}
+
+#largeStatusDisconnected {
+    color: #6b7280;
+    font-size: 35px;
+}
+
+#largeStatusConnected {
+    color: #22c55e;
+    font-size: 35px;
+}
+
+#connectionTitle {
+    font-size: 22px;
+    font-weight: 700;
+}
+
+#bottomBar {
+    background-color: #050914;
+    border-top: 1px solid #20283a;
+}
+
+#bottomBar QLabel {
+    font-size: 13px;
+}
+
+QScrollBar:vertical {
+    background-color: #090e18;
+    width: 10px;
+}
+
+QScrollBar::handle:vertical {
+    background-color: #3c465b;
+    border-radius: 5px;
+    min-height: 30px;
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    height: 0;
+}
