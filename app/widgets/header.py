@@ -17,6 +17,8 @@ class Header(QScrollArea):
 
         self.main_window = main_window
         self.setObjectName("header")
+        self.setWidgetResizable(True)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setMinimumHeight(105)
         self.setMaximumHeight(125)
         self.setFrameShape(QFrame.Shape.NoFrame)
@@ -30,9 +32,10 @@ class Header(QScrollArea):
 
     def build_interface(self) -> None:
         content = QWidget()
+        content.setObjectName("headerContent")
         layout = QHBoxLayout(content)
-        layout.setContentsMargins(28, 14, 26, 14)
-        layout.setSpacing(12)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(8)
 
         layout.addWidget(self.create_brand())
 
@@ -92,20 +95,22 @@ class Header(QScrollArea):
 
         layout.addWidget(minimize_button)
         layout.addWidget(close_button)
-        content.adjustSize()
         self.setWidget(content)
 
     def create_brand(self) -> QWidget:
         brand = QWidget()
+        brand.setMinimumWidth(270)
+        brand.setMaximumWidth(310)
+        brand.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
 
         layout = QHBoxLayout(brand)
-        layout.setContentsMargins(0, 0, 20, 0)
-        layout.setSpacing(12)
+        layout.setContentsMargins(0, 0, 8, 0)
+        layout.setSpacing(8)
 
         logo = QLabel("🐼")
         logo.setObjectName("logo")
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        logo.setFixedSize(70, 70)
+        logo.setFixedSize(64, 64)
 
         text_container = QWidget()
 
@@ -142,7 +147,7 @@ class Header(QScrollArea):
     ) -> QFrame:
         card = QFrame()
         card.setObjectName("headerStatusCard")
-        card.setMinimumSize(135, 70)
+        card.setMinimumSize(118, 70)
         card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
 
         layout = QVBoxLayout(card)
@@ -171,7 +176,7 @@ class Header(QScrollArea):
         text: str,
     ) -> QWidget:
         container = QWidget()
-        container.setMinimumSize(70, 72)
+        container.setMinimumSize(52, 72)
 
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -180,7 +185,7 @@ class Header(QScrollArea):
 
         button = QPushButton(icon)
         button.setObjectName("headerIconButton")
-        button.setFixedSize(38, 38)
+        button.setFixedSize(34, 34)
 
         label = QLabel(text)
         label.setObjectName("headerButtonText")

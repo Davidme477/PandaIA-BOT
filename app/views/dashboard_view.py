@@ -38,6 +38,7 @@ class DashboardView(QScrollArea):
         self.setObjectName("contentScroll")
         self.setWidgetResizable(True)
         self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         self.model_combo: QComboBox | None = None
         self.personality_combo: QComboBox | None = None
@@ -58,12 +59,15 @@ class DashboardView(QScrollArea):
 
         content = QWidget()
         content.setObjectName("mainContent")
+        content.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         layout = QVBoxLayout(content)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(16)
         layout.addWidget(self.create_statistics())
 
-        self.cards_grid = ResponsiveGrid(wide_columns=4, medium_columns=2)
+        self.cards_grid = ResponsiveGrid(
+            wide_columns=4, medium_columns=2, minimum_column_width=250
+        )
         for card in (
             self.create_ai_card(), self.create_voice_card(),
             self.create_controls_card(), self.create_activity_card(),
@@ -84,7 +88,9 @@ class DashboardView(QScrollArea):
         frame.setObjectName("statisticsPanel")
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(22, 12, 22, 12)
-        self.stats_grid = ResponsiveGrid(wide_columns=5, medium_columns=3, spacing=8)
+        self.stats_grid = ResponsiveGrid(
+            wide_columns=5, medium_columns=3, spacing=8, minimum_column_width=155
+        )
 
         stats = [
             ("viewers", "👥", "Espectadores", "0"),
@@ -327,7 +333,9 @@ class DashboardView(QScrollArea):
         layout.setSpacing(12)
         title = QLabel("Memoria del BOT")
         title.setObjectName("panelTitle")
-        self.memory_grid = ResponsiveGrid(wide_columns=4, medium_columns=2, spacing=12)
+        self.memory_grid = ResponsiveGrid(
+            wide_columns=4, medium_columns=2, spacing=12, minimum_column_width=220
+        )
         values = [
             ("status", "Estado: Desconectada"),
             ("users", "Usuarios recordados: 0 / 100"),

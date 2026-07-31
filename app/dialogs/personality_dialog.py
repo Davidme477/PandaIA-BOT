@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton,
@@ -53,8 +53,8 @@ class PersonalityDialog(QDialog):
         self.setObjectName("voiceDialog")
         self.setWindowTitle("Editar personalidad")
         self.setModal(True)
-        self.setMinimumSize(560, 600)
-        self.resize(720, 780)
+        self.setMinimumSize(540, 500)
+        self._set_screen_safe_initial_size(720, 740)
 
         self.name_edit = QLineEdit(custom_name)
         self.name_edit.setObjectName("voiceCombo")
@@ -99,9 +99,12 @@ class PersonalityDialog(QDialog):
         root.setContentsMargins(18, 18, 18, 18)
         root.setSpacing(12)
         self.scroll_area = QScrollArea()
+        self.scroll_area.setObjectName("voiceDialogScroll")
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         content = QWidget()
+        content.setObjectName("voiceDialogContent")
         layout = QVBoxLayout(content)
         layout.setContentsMargins(10, 8, 10, 8)
         layout.setSpacing(14)
@@ -133,11 +136,12 @@ class PersonalityDialog(QDialog):
         answer_label.setWordWrap(True)
         layout.addWidget(answer_label)
         layout.addWidget(self.answer_area)
-        layout.addStretch()
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.scroll_area.setWidget(content)
         root.addWidget(self.scroll_area, 1)
 
         self.actions_widget = QWidget()
+        self.actions_widget.setObjectName("voiceDialogActions")
         actions = QHBoxLayout()
         actions.setContentsMargins(0, 8, 0, 0)
         actions.setSpacing(12)
@@ -148,6 +152,17 @@ class PersonalityDialog(QDialog):
         actions.addWidget(self.save_button)
         self.actions_widget.setLayout(actions)
         root.addWidget(self.actions_widget)
+
+    def _set_screen_safe_initial_size(self, width: int, height: int) -> None:
+        available = self.screen().availableGeometry()
+        self.setMinimumSize(
+            min(self.minimumWidth(), max(1, available.width() - 20)),
+            min(self.minimumHeight(), max(1, available.height() - 20)),
+        )
+        safe_width = max(self.minimumWidth(), min(width, available.width() - 40))
+        safe_height = max(self.minimumHeight(), min(height, available.height() - 40))
+        self.setMaximumHeight(max(self.minimumHeight(), available.height() - 20))
+        self.resize(safe_width, safe_height)
 
     def _connect_signals(self) -> None:
         self.name_edit.textChanged.connect(self.update_prompt_preview)

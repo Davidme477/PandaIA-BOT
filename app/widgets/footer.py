@@ -4,6 +4,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QScrollArea,
+    QSizePolicy,
     QWidget,
 )
 
@@ -13,6 +14,8 @@ class Footer(QScrollArea):
         super().__init__()
 
         self.setObjectName("bottomBar")
+        self.setWidgetResizable(True)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setMinimumHeight(55)
         self.setMaximumHeight(72)
         self.setFrameShape(QFrame.Shape.NoFrame)
@@ -23,9 +26,10 @@ class Footer(QScrollArea):
 
     def build_interface(self) -> None:
         content = QWidget()
+        content.setObjectName("footerContent")
         layout = QHBoxLayout(content)
-        layout.setContentsMargins(28, 0, 28, 0)
-        layout.setSpacing(22)
+        layout.setContentsMargins(8, 0, 8, 0)
+        layout.setSpacing(8)
 
         layout.addWidget(QLabel("⚙  CPU: 18%"))
         layout.addWidget(self.create_separator())
@@ -48,7 +52,6 @@ class Footer(QScrollArea):
 
         layout.addWidget(self.create_separator())
         layout.addWidget(QLabel("◷  Hora: 20:45:30"))
-        content.adjustSize()
         self.setWidget(content)
 
     def create_separator(self) -> QFrame:

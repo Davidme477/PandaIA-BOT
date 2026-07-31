@@ -54,8 +54,8 @@ class VoiceDialog(QDialog):
         self.setObjectName("voiceDialog")
         self.setWindowTitle("Administrador de Voces")
         self.setModal(True)
-        self.setMinimumSize(540, 580)
-        self.resize(680, 700)
+        self.setMinimumSize(520, 500)
+        self._set_screen_safe_initial_size(680, 700)
 
         self.manager = VoiceManager()
         self.worker: VoicePreviewWorker | None = None
@@ -120,9 +120,12 @@ class VoiceDialog(QDialog):
         root.setContentsMargins(18, 18, 18, 18)
         root.setSpacing(12)
         self.scroll_area = QScrollArea()
+        self.scroll_area.setObjectName("voiceDialogScroll")
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         content = QWidget()
+        content.setObjectName("voiceDialogContent")
         layout = QVBoxLayout(content)
         layout.setContentsMargins(10, 8, 10, 8)
         layout.setSpacing(16)
@@ -175,11 +178,12 @@ class VoiceDialog(QDialog):
         layout.addWidget(self.preview_text)
         layout.addWidget(self.status_label)
         layout.addWidget(self.preview_button)
-        layout.addStretch()
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.scroll_area.setWidget(content)
         root.addWidget(self.scroll_area, 1)
 
         self.actions_widget = QWidget()
+        self.actions_widget.setObjectName("voiceDialogActions")
         actions = QHBoxLayout()
         actions.setContentsMargins(0, 8, 0, 0)
         actions.addStretch()
@@ -187,6 +191,17 @@ class VoiceDialog(QDialog):
         actions.addWidget(self.save_button)
         self.actions_widget.setLayout(actions)
         root.addWidget(self.actions_widget)
+
+    def _set_screen_safe_initial_size(self, width: int, height: int) -> None:
+        available = self.screen().availableGeometry()
+        self.setMinimumSize(
+            min(self.minimumWidth(), max(1, available.width() - 20)),
+            min(self.minimumHeight(), max(1, available.height() - 20)),
+        )
+        safe_width = max(self.minimumWidth(), min(width, available.width() - 40))
+        safe_height = max(self.minimumHeight(), min(height, available.height() - 40))
+        self.setMaximumHeight(max(self.minimumHeight(), available.height() - 20))
+        self.resize(safe_width, safe_height)
 
     @staticmethod
     def make_label(text: str) -> QLabel:

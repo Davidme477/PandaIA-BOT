@@ -5,11 +5,15 @@
 }
 
 QMainWindow,
-#centralWidget {
+#centralWidget,
+#mainBody {
     background-color: #060b15;
 }
 
-#header {
+#header,
+#header > QWidget,
+#header > QWidget > QWidget,
+#headerContent {
     background-color: #050914;
     border-bottom: 1px solid #20283a;
 }
@@ -132,7 +136,12 @@ QMainWindow,
 #contentStack,
 #mainContent,
 #contentScroll,
-#contentScroll > QWidget > QWidget {
+#contentScroll > QWidget,
+#contentScroll > QWidget > QWidget,
+#tiktokScroll,
+#tiktokScroll > QWidget,
+#tiktokContent,
+#responsiveGrid {
     background-color: transparent;
 }
 
@@ -311,13 +320,16 @@ QCheckBox::indicator:checked {
     font-weight: 700;
 }
 
-#bottomBar {
+#bottomBar,
+#bottomBar > QWidget,
+#bottomBar > QWidget > QWidget,
+#footerContent {
     background-color: #050914;
     border-top: 1px solid #20283a;
 }
 
 #bottomBar QLabel {
-    font-size: 13px;
+    font-size: 12px;
 }
 
 QScrollBar:vertical {
@@ -342,6 +354,14 @@ QScrollBar::sub-line:vertical {
    ========================================================= */
 
 #voiceDialog {
+    background-color: #080e19;
+}
+
+#voiceDialogScroll,
+#voiceDialogScroll > QWidget,
+#voiceDialogScroll > QWidget > QWidget,
+#voiceDialogContent,
+#voiceDialogActions {
     background-color: #080e19;
 }
 

@@ -27,14 +27,17 @@ class TikTokView(QScrollArea):
 
     def __init__(self) -> None:
         super().__init__()
+        self.setObjectName("tiktokScroll")
         self.setWidgetResizable(True)
         self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.connection_state = "disconnected"
         self.build_interface()
         self.load_settings()
 
     def build_interface(self) -> None:
         content = QWidget()
+        content.setObjectName("tiktokContent")
         root = QVBoxLayout(content)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(16)

@@ -44,6 +44,7 @@ class MainWindow(QMainWindow):
         root_layout.addWidget(self.header)
 
         body = QWidget()
+        body.setObjectName("mainBody")
         body_layout = QHBoxLayout(body)
         body_layout.setContentsMargins(16, 12, 16, 12)
         body_layout.setSpacing(16)
