@@ -3,8 +3,9 @@ from pathlib import Path
 from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton,
-    QScrollArea, QVBoxLayout, QWidget,
+    QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
+from app.widgets.responsive_grid import ResponsiveGrid
 from services.ollama.ollama_service import OllamaService, OllamaServiceError
 from services.ollama.personalities import PERSONALITY_NAMES, dashboard_defaults
 from config.settings_store import read_settings, write_settings_atomic
@@ -62,13 +63,13 @@ class DashboardView(QScrollArea):
         layout.setSpacing(16)
         layout.addWidget(self.create_statistics())
 
-        cards = QHBoxLayout()
-        cards.setSpacing(16)
-        cards.addWidget(self.create_ai_card(), 1)
-        cards.addWidget(self.create_voice_card(), 1)
-        cards.addWidget(self.create_controls_card(), 1)
-        cards.addWidget(self.create_activity_card(), 1)
-        layout.addLayout(cards)
+        self.cards_grid = ResponsiveGrid(wide_columns=4, medium_columns=2)
+        for card in (
+            self.create_ai_card(), self.create_voice_card(),
+            self.create_controls_card(), self.create_activity_card(),
+        ):
+            self.cards_grid.add_responsive_widget(card)
+        layout.addWidget(self.cards_grid)
         layout.addWidget(self.create_memory_panel())
         layout.addStretch()
         self.setWidget(content)
@@ -81,10 +82,9 @@ class DashboardView(QScrollArea):
     def create_statistics(self) -> QFrame:
         frame = QFrame()
         frame.setObjectName("statisticsPanel")
-        frame.setFixedHeight(105)
-        layout = QHBoxLayout(frame)
+        layout = QVBoxLayout(frame)
         layout.setContentsMargins(22, 12, 22, 12)
-        layout.setSpacing(0)
+        self.stats_grid = ResponsiveGrid(wide_columns=5, medium_columns=3, spacing=8)
 
         stats = [
             ("viewers", "👥", "Espectadores", "0"),
@@ -95,6 +95,7 @@ class DashboardView(QScrollArea):
         ]
         for index, (key, icon, name, value) in enumerate(stats):
             item = QWidget()
+            item.setMinimumWidth(155)
             row = QHBoxLayout(item)
             row.setContentsMargins(12, 0, 12, 0)
             row.setSpacing(14)
@@ -106,6 +107,7 @@ class DashboardView(QScrollArea):
             texts_layout.setSpacing(5)
             name_label = QLabel(name)
             name_label.setObjectName("statName")
+            name_label.setWordWrap(True)
             value_label = QLabel(value)
             value_label.setObjectName("statValue")
             self.stat_labels[key] = value_label
@@ -113,12 +115,8 @@ class DashboardView(QScrollArea):
             texts_layout.addWidget(value_label)
             row.addWidget(icon_label)
             row.addWidget(texts)
-            layout.addWidget(item, 1)
-            if index < len(stats) - 1:
-                separator = QFrame()
-                separator.setObjectName("verticalSeparator")
-                separator.setFixedWidth(1)
-                layout.addWidget(separator)
+            self.stats_grid.add_responsive_widget(item)
+        layout.addWidget(self.stats_grid)
         return frame
 
     def create_ai_card(self) -> QFrame:
@@ -201,7 +199,10 @@ class DashboardView(QScrollArea):
             toggle.setFixedSize(43, 25)
             toggle.setToolTip(tooltips[key])
             self.control_toggles[key] = toggle
-            row.addWidget(QLabel(text))
+            text_label = QLabel(text)
+            text_label.setWordWrap(True)
+            text_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+            row.addWidget(text_label, 1)
             row.addStretch()
             row.addWidget(toggle)
             layout.addWidget(row_widget)
@@ -240,12 +241,15 @@ class DashboardView(QScrollArea):
         text_box = QWidget()
         text_layout = QVBoxLayout(text_box)
         text_layout.setContentsMargins(0, 0, 0, 0)
-        text_layout.addWidget(QLabel(title))
+        title_label = QLabel(title)
+        title_label.setWordWrap(True)
+        text_layout.addWidget(title_label)
         user_label = QLabel(user)
         user_label.setObjectName("activityUser")
         text_layout.addWidget(user_label)
         amount_label = QLabel(amount)
         amount_label.setObjectName("activityAmount")
+        amount_label.setMinimumWidth(34)
         row.addWidget(icon_label)
         row.addWidget(text_box, 1)
         row.addWidget(amount_label)
@@ -300,7 +304,8 @@ class DashboardView(QScrollArea):
     def create_panel(self, title_text: str) -> QFrame:
         panel = QFrame()
         panel.setObjectName("dashboardCard")
-        panel.setMinimumHeight(410)
+        panel.setMinimumHeight(380)
+        panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(20, 18, 20, 20)
         layout.setSpacing(14)
@@ -316,14 +321,13 @@ class DashboardView(QScrollArea):
     def create_memory_panel(self) -> QFrame:
         panel = QFrame()
         panel.setObjectName("memoryPanel")
-        panel.setFixedHeight(130)
+        panel.setMinimumHeight(130)
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(22, 16, 22, 18)
         layout.setSpacing(12)
         title = QLabel("Memoria del BOT")
         title.setObjectName("panelTitle")
-        fields = QHBoxLayout()
-        fields.setSpacing(12)
+        self.memory_grid = ResponsiveGrid(wide_columns=4, medium_columns=2, spacing=12)
         values = [
             ("status", "Estado: Desconectada"),
             ("users", "Usuarios recordados: 0 / 100"),
@@ -334,10 +338,11 @@ class DashboardView(QScrollArea):
             label = QLabel(value)
             label.setObjectName("memoryField")
             label.setMinimumHeight(42)
+            label.setWordWrap(True)
             self.memory_labels[key] = label
-            fields.addWidget(label)
+            self.memory_grid.add_responsive_widget(label)
         layout.addWidget(title)
-        layout.addLayout(fields)
+        layout.addWidget(self.memory_grid)
         self.set_memory_snapshot(MemorySnapshot())
         return panel
 

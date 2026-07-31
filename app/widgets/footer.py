@@ -1,22 +1,29 @@
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QScrollArea,
     QWidget,
 )
 
 
-class Footer(QWidget):
+class Footer(QScrollArea):
     def __init__(self) -> None:
         super().__init__()
 
         self.setObjectName("bottomBar")
-        self.setFixedHeight(55)
+        self.setMinimumHeight(55)
+        self.setMaximumHeight(72)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         self.build_interface()
 
     def build_interface(self) -> None:
-        layout = QHBoxLayout(self)
+        content = QWidget()
+        layout = QHBoxLayout(content)
         layout.setContentsMargins(28, 0, 28, 0)
         layout.setSpacing(22)
 
@@ -41,6 +48,8 @@ class Footer(QWidget):
 
         layout.addWidget(self.create_separator())
         layout.addWidget(QLabel("◷  Hora: 20:45:30"))
+        content.adjustSize()
+        self.setWidget(content)
 
     def create_separator(self) -> QFrame:
         separator = QFrame()

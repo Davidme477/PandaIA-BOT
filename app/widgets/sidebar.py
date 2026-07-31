@@ -3,6 +3,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QLabel,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -15,7 +16,9 @@ class Sidebar(QWidget):
         super().__init__()
 
         self.setObjectName("sidebar")
-        self.setFixedWidth(245)
+        self.setMinimumWidth(190)
+        self.setMaximumWidth(245)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
 
         self.buttons: list[QPushButton] = []
 
@@ -42,7 +45,7 @@ class Sidebar(QWidget):
             button = QPushButton(f"{icon}    {text}")
             button.setObjectName("sidebarButton")
             button.setCheckable(True)
-            button.setFixedHeight(50)
+            button.setMinimumHeight(46)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
 
             button.clicked.connect(
@@ -83,10 +86,12 @@ class Sidebar(QWidget):
         )
         name.setObjectName("profileName")
         name.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        name.setWordWrap(True)
 
         version = QLabel("Versión 1.0.0")
         version.setObjectName("profileVersion")
         version.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        version.setWordWrap(True)
 
         layout.addWidget(panda)
         layout.addWidget(name)

@@ -3,7 +3,8 @@ from __future__ import annotations
 from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel,
-    QMessageBox, QPushButton, QSlider, QTextEdit, QVBoxLayout, QWidget,
+    QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSlider,
+    QTextEdit, QVBoxLayout, QWidget,
 )
 
 from services.tts.voice_manager import VoiceManager
@@ -53,7 +54,7 @@ class VoiceDialog(QDialog):
         self.setObjectName("voiceDialog")
         self.setWindowTitle("Administrador de Voces")
         self.setModal(True)
-        self.setMinimumSize(620, 660)
+        self.setMinimumSize(540, 580)
         self.resize(680, 700)
 
         self.manager = VoiceManager()
@@ -86,7 +87,9 @@ class VoiceDialog(QDialog):
         self.preview_text.setObjectName("voicePreviewText")
         self.preview_text.setPlainText(DEFAULT_TEXT)
         self.preview_text.setMinimumHeight(120)
-        self.preview_text.setMaximumHeight(145)
+        self.preview_text.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
 
         self.status_label = QLabel("Lista para probar una voz.")
         self.status_label.setObjectName("voiceStatus")
@@ -114,8 +117,15 @@ class VoiceDialog(QDialog):
 
     def build_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setContentsMargins(28, 26, 28, 26)
-        root.setSpacing(18)
+        root.setContentsMargins(18, 18, 18, 18)
+        root.setSpacing(12)
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(16)
 
         title = QLabel("Administrador de Voces")
         title.setObjectName("voiceDialogTitle")
@@ -123,13 +133,13 @@ class VoiceDialog(QDialog):
         subtitle.setObjectName("voiceDialogSubtitle")
         subtitle.setWordWrap(True)
 
-        root.addWidget(title)
-        root.addWidget(subtitle)
+        layout.addWidget(title)
+        layout.addWidget(subtitle)
 
         separator = QFrame()
         separator.setObjectName("voiceDialogSeparator")
         separator.setFixedHeight(1)
-        root.addWidget(separator)
+        layout.addWidget(separator)
 
         grid = QGridLayout()
         grid.setHorizontalSpacing(16)
@@ -159,19 +169,24 @@ class VoiceDialog(QDialog):
         grid.addWidget(speed_box, 3, 1)
         grid.addWidget(self.make_label("Volumen"), 4, 0)
         grid.addWidget(volume_box, 4, 1)
-        root.addLayout(grid)
+        layout.addLayout(grid)
 
-        root.addWidget(self.make_label("Texto de prueba"))
-        root.addWidget(self.preview_text)
-        root.addWidget(self.status_label)
-        root.addWidget(self.preview_button)
-        root.addStretch()
+        layout.addWidget(self.make_label("Texto de prueba"))
+        layout.addWidget(self.preview_text)
+        layout.addWidget(self.status_label)
+        layout.addWidget(self.preview_button)
+        layout.addStretch()
+        self.scroll_area.setWidget(content)
+        root.addWidget(self.scroll_area, 1)
 
+        self.actions_widget = QWidget()
         actions = QHBoxLayout()
+        actions.setContentsMargins(0, 8, 0, 0)
         actions.addStretch()
         actions.addWidget(self.cancel_button)
         actions.addWidget(self.save_button)
-        root.addLayout(actions)
+        self.actions_widget.setLayout(actions)
+        root.addWidget(self.actions_widget)
 
     @staticmethod
     def make_label(text: str) -> QLabel:

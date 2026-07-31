@@ -1,4 +1,3 @@
-import json
 from datetime import datetime
 from pathlib import Path
 
@@ -10,26 +9,33 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
+from app.widgets.responsive_grid import ResponsiveGrid
+from config.settings_store import read_settings, write_settings_atomic
 
 
 CONFIG_FILE = Path("config/settings.json")
 
 
-class TikTokView(QWidget):
+class TikTokView(QScrollArea):
     connect_requested = Signal(str)
     disconnect_requested = Signal()
 
     def __init__(self) -> None:
         super().__init__()
+        self.setWidgetResizable(True)
+        self.setFrameShape(QFrame.Shape.NoFrame)
         self.connection_state = "disconnected"
         self.build_interface()
         self.load_settings()
 
     def build_interface(self) -> None:
-        root = QVBoxLayout(self)
+        content = QWidget()
+        root = QVBoxLayout(content)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(16)
 
@@ -40,18 +46,19 @@ class TikTokView(QWidget):
             "Ingresa el nombre de usuario de la cuenta que realizará el Live."
         )
         subtitle.setObjectName("pageSubtitle")
+        subtitle.setWordWrap(True)
 
         root.addWidget(title)
         root.addWidget(subtitle)
 
-        columns = QHBoxLayout()
-        columns.setSpacing(16)
-        columns.addWidget(self.create_account_panel(), 1)
-        columns.addWidget(self.create_information_panel(), 1)
+        columns = ResponsiveGrid(wide_columns=2, medium_columns=2)
+        columns.add_responsive_widget(self.create_account_panel())
+        columns.add_responsive_widget(self.create_information_panel())
 
-        root.addLayout(columns)
+        root.addWidget(columns)
         root.addWidget(self.create_connection_panel())
         root.addStretch()
+        self.setWidget(content)
 
     def create_account_panel(self) -> QFrame:
         panel = self.create_panel("Cuenta de TikTok")
@@ -70,6 +77,7 @@ class TikTokView(QWidget):
             "Puedes escribir el usuario con o sin el símbolo @."
         )
         helper.setObjectName("helperText")
+        helper.setWordWrap(True)
 
         self.remember_checkbox = QCheckBox("Recordar usuario")
         self.remember_checkbox.setChecked(True)
@@ -139,6 +147,7 @@ class TikTokView(QWidget):
         )
         self.status_description.setObjectName("pageSubtitle")
         self.status_description.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.status_description.setWordWrap(True)
 
         self.connect_button = QPushButton("Conectar")
         self.connect_button.setObjectName("primaryButton")
@@ -158,7 +167,8 @@ class TikTokView(QWidget):
     def create_panel(self, title_text: str) -> QFrame:
         panel = QFrame()
         panel.setObjectName("tiktokPanel")
-        panel.setMinimumHeight(320)
+        panel.setMinimumHeight(280)
+        panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(22, 20, 22, 20)
@@ -187,6 +197,8 @@ class TikTokView(QWidget):
 
         label = QLabel(label_text)
         label.setObjectName("informationLabel")
+        label.setWordWrap(True)
+        value_widget.setWordWrap(True)
 
         layout.addWidget(label)
         layout.addStretch()
@@ -213,18 +225,14 @@ class TikTokView(QWidget):
         self.current_user_value.setText(username)
         CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-        data = {
-            "tiktok": {
-                "username": username,
-                "remember_user": self.remember_checkbox.isChecked(),
-            }
+        data = read_settings(CONFIG_FILE)
+        data["tiktok"] = {
+            "username": username,
+            "remember_user": self.remember_checkbox.isChecked(),
         }
 
         try:
-            CONFIG_FILE.write_text(
-                json.dumps(data, indent=4, ensure_ascii=False),
-                encoding="utf-8",
-            )
+            write_settings_atomic(CONFIG_FILE, data)
             self.show_save_message(
                 "Usuario guardado correctamente.",
                 is_error=False,
@@ -243,7 +251,7 @@ class TikTokView(QWidget):
             return
 
         try:
-            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            data = read_settings(CONFIG_FILE)
             tiktok_data = data.get("tiktok", {})
             username = tiktok_data.get("username", "")
             remember_user = tiktok_data.get("remember_user", True)
@@ -257,7 +265,7 @@ class TikTokView(QWidget):
                     f"Usuario preparado para conectarse: {username}"
                 )
 
-        except (OSError, json.JSONDecodeError):
+        except OSError:
             self.show_save_message(
                 "No se pudo leer la configuración guardada.",
                 is_error=True,

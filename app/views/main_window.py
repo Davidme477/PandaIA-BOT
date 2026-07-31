@@ -20,7 +20,7 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.setWindowTitle("PandaIA BOT")
-        self.setMinimumSize(1400, 800)
+        self.setMinimumSize(1024, 700)
         self.resize(1600, 900)
 
         self.pages = QStackedWidget()

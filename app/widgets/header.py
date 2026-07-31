@@ -4,18 +4,24 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
 
-class Header(QWidget):
+class Header(QScrollArea):
     def __init__(self, main_window) -> None:
         super().__init__()
 
         self.main_window = main_window
         self.setObjectName("header")
-        self.setFixedHeight(105)
+        self.setMinimumHeight(105)
+        self.setMaximumHeight(125)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         self.status_labels: dict[str, QLabel] = {}
         self.status_titles: dict[str, QLabel] = {}
@@ -23,7 +29,8 @@ class Header(QWidget):
         self.build_interface()
 
     def build_interface(self) -> None:
-        layout = QHBoxLayout(self)
+        content = QWidget()
+        layout = QHBoxLayout(content)
         layout.setContentsMargins(28, 14, 26, 14)
         layout.setSpacing(12)
 
@@ -85,6 +92,8 @@ class Header(QWidget):
 
         layout.addWidget(minimize_button)
         layout.addWidget(close_button)
+        content.adjustSize()
+        self.setWidget(content)
 
     def create_brand(self) -> QWidget:
         brand = QWidget()
@@ -114,6 +123,7 @@ class Header(QWidget):
             "Tu asistente IA para TikTok Live"
         )
         subtitle.setObjectName("brandSubtitle")
+        subtitle.setWordWrap(True)
 
         text_layout.addWidget(title)
         text_layout.addWidget(subtitle)
@@ -132,7 +142,8 @@ class Header(QWidget):
     ) -> QFrame:
         card = QFrame()
         card.setObjectName("headerStatusCard")
-        card.setFixedSize(145, 70)
+        card.setMinimumSize(135, 70)
+        card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
 
         layout = QVBoxLayout(card)
         layout.setContentsMargins(14, 10, 14, 10)
@@ -140,9 +151,11 @@ class Header(QWidget):
 
         title = QLabel(title_text)
         title.setObjectName("statusCardTitle")
+        title.setWordWrap(True)
 
         status = QLabel(status_text)
         status.setObjectName(object_name)
+        status.setWordWrap(True)
 
         self.status_labels[key] = status
         self.status_titles[key] = title
@@ -158,7 +171,7 @@ class Header(QWidget):
         text: str,
     ) -> QWidget:
         container = QWidget()
-        container.setFixedSize(74, 72)
+        container.setMinimumSize(70, 72)
 
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)

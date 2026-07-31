@@ -4,7 +4,7 @@ from PySide6.QtCore import QThread, Signal
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QTextEdit, QVBoxLayout, QWidget,
+    QScrollArea, QSizePolicy, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from services.ollama.ollama_service import OllamaService
@@ -53,7 +53,8 @@ class PersonalityDialog(QDialog):
         self.setObjectName("voiceDialog")
         self.setWindowTitle("Editar personalidad")
         self.setModal(True)
-        self.setMinimumSize(680, 720)
+        self.setMinimumSize(560, 600)
+        self.resize(720, 780)
 
         self.name_edit = QLineEdit(custom_name)
         self.name_edit.setObjectName("voiceCombo")
@@ -61,16 +62,25 @@ class PersonalityDialog(QDialog):
         self.instructions_edit.setObjectName("voicePreviewText")
         self.instructions_edit.setPlainText(custom_prompt)
         self.instructions_edit.setMinimumHeight(120)
+        self.instructions_edit.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
         self.preview_prompt = QTextEdit()
         self.preview_prompt.setObjectName("voicePreviewText")
         self.preview_prompt.setReadOnly(True)
         self.preview_prompt.setMinimumHeight(120)
+        self.preview_prompt.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
         self.test_message = QLineEdit("Hola PandaIA, ¿cómo estás?")
         self.test_message.setObjectName("voiceCombo")
         self.answer_area = QTextEdit()
         self.answer_area.setObjectName("voicePreviewText")
         self.answer_area.setReadOnly(True)
         self.answer_area.setMinimumHeight(90)
+        self.answer_area.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
         self.status_label = QLabel("Lista para probar la personalidad.")
         self.status_label.setObjectName("voiceStatus")
         self.test_button = QPushButton("Probar personalidad")
@@ -85,13 +95,21 @@ class PersonalityDialog(QDialog):
         self.update_prompt_preview()
 
     def _build_ui(self) -> None:
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(28, 26, 28, 26)
-        layout.setSpacing(12)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(18, 18, 18, 18)
+        root.setSpacing(12)
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(14)
         title = QLabel("Personalidad personalizada")
         title.setObjectName("voiceDialogTitle")
         subtitle = QLabel("Define cómo debe expresarse PandaIA y pruébala sin reproducir voz.")
         subtitle.setObjectName("voiceDialogSubtitle")
+        subtitle.setWordWrap(True)
         separator = QFrame()
         separator.setObjectName("voiceDialogSeparator")
         separator.setFixedHeight(1)
@@ -104,17 +122,32 @@ class PersonalityDialog(QDialog):
             ("Vista previa del system prompt", self.preview_prompt),
             ("Mensaje de prueba", self.test_message),
         ):
-            layout.addWidget(QLabel(label_text))
+            field_label = QLabel(label_text)
+            field_label.setWordWrap(True)
+            layout.addWidget(field_label)
             layout.addWidget(widget)
         layout.addWidget(self.test_button)
         layout.addWidget(self.status_label)
-        layout.addWidget(QLabel("Respuesta de Ollama"))
+        self.status_label.setWordWrap(True)
+        answer_label = QLabel("Respuesta de Ollama")
+        answer_label.setWordWrap(True)
+        layout.addWidget(answer_label)
         layout.addWidget(self.answer_area)
+        layout.addStretch()
+        self.scroll_area.setWidget(content)
+        root.addWidget(self.scroll_area, 1)
+
+        self.actions_widget = QWidget()
         actions = QHBoxLayout()
+        actions.setContentsMargins(0, 8, 0, 0)
+        actions.setSpacing(12)
         actions.addStretch()
+        self.cancel_button.setMinimumSize(120, 44)
+        self.save_button.setMinimumSize(180, 44)
         actions.addWidget(self.cancel_button)
         actions.addWidget(self.save_button)
-        layout.addLayout(actions)
+        self.actions_widget.setLayout(actions)
+        root.addWidget(self.actions_widget)
 
     def _connect_signals(self) -> None:
         self.name_edit.textChanged.connect(self.update_prompt_preview)
