@@ -17,6 +17,7 @@ class SpotifyRuntime(QObject):
     account_changed = Signal(object)
     queue_changed = Signal(object)
     playback_changed = Signal(object)
+    spotify_queue_changed = Signal(object)
     overlay_event = Signal(object)
 
     def __init__(self, settings: dict[str, object] | None = None, client: SpotifyClient | None = None,
@@ -47,6 +48,13 @@ class SpotifyRuntime(QObject):
             return True
         self.jobs.put((username, query))
         return True
+
+    def submit_local_request(self, query: str) -> bool:
+        query = query.strip()
+        if len(query) < 3:
+            self.state_changed.emit("Error de Spotify", "Escribe artista y canción para la prueba local.")
+            return False
+        self.jobs.put(("Prueba local", query)); return True
 
     def set_tiktok_connected(self, connected: bool) -> None:
         self.connected_tiktok = connected
@@ -104,6 +112,7 @@ class SpotifyRuntime(QObject):
         try:
             playback = self.client.playback()
             self.playback_changed.emit(playback)
+            self._publish_spotify_queue(self.client.playback_queue())
             item = playback.get("item") if isinstance(playback, dict) else None
             if isinstance(item, dict):
                 uri = str(item.get("uri", ""))
@@ -140,6 +149,7 @@ class SpotifyRuntime(QObject):
         try:
             self.client.add_to_queue(pending.track.uri, device_id)
             self.requests.update(pending.request_id, RequestStatus.SPOTIFY_QUEUE)
+            self._publish_spotify_queue(self.client.playback_queue())
         except SpotifyAPIError as error:
             self.requests.update(pending.request_id, RequestStatus.ERROR, str(error))
         self.queue_changed.emit(self.requests.snapshot())
@@ -158,9 +168,27 @@ class SpotifyRuntime(QObject):
             else:
                 self.state_changed.emit("Conectado", "Spotify Premium conectado.")
             self.playback_changed.emit(self.client.playback())
+            self._publish_spotify_queue(self.client.playback_queue())
         except SpotifyAPIError as error:
             state = "Premium requerido" if error.status == 403 else "Cuenta no autorizada" if error.status == 401 else "Error de Spotify"
             self.state_changed.emit(state, str(error))
+
+    def _publish_spotify_queue(self, data: dict[str, object]) -> None:
+        requested = {item.track.uri: item.username for item in self.requests.snapshot()}
+        tracks = []
+        current = data.get("currently_playing") if isinstance(data, dict) else None
+        for position, item in enumerate(([current] if isinstance(current, dict) else []) + list(data.get("queue", []) if isinstance(data, dict) else [])):
+            if not isinstance(item, dict): continue
+            uri = str(item.get("uri", "")); artists = ", ".join(str(a.get("name", "")) for a in item.get("artists", []))
+            username = requested.get(uri, "")
+            is_current = position == 0 and isinstance(current, dict)
+            tracks.append({
+                "position": 0 if is_current else position + (0 if isinstance(current, dict) else 1), "current": is_current,
+                "uri": uri, "title": str(item.get("name", "")), "artist": artists,
+                "duration_ms": int(item.get("duration_ms", 0)),
+                "origin": f"Solicitada por @{username.lstrip('@')}" if username else "Añadida manualmente en Spotify",
+            })
+        self.spotify_queue_changed.emit(tracks)
 
     def disconnect(self) -> None:
         self.store.clear_tokens()

@@ -3,8 +3,16 @@ from __future__ import annotations
 from PySide6.QtWidgets import QGridLayout, QSizePolicy, QWidget
 
 
-WIDE_BREAKPOINT = 1120
-MEDIUM_BREAKPOINT = 620
+WIDE_BREAKPOINT = 1350
+MEDIUM_BREAKPOINT = 850
+
+
+def layout_mode(width: int) -> str:
+    if width >= WIDE_BREAKPOINT:
+        return "wide"
+    if width >= MEDIUM_BREAKPOINT:
+        return "medium"
+    return "narrow"
 
 
 def columns_for_width(
@@ -14,9 +22,9 @@ def columns_for_width(
     medium_columns: int = 2,
     narrow_columns: int = 1,
 ) -> int:
-    if width >= WIDE_BREAKPOINT:
+    if layout_mode(width) == "wide":
         return wide_columns
-    if width >= MEDIUM_BREAKPOINT:
+    if layout_mode(width) == "medium":
         return min(wide_columns, medium_columns)
     return min(wide_columns, narrow_columns)
 
@@ -52,14 +60,15 @@ class ResponsiveGrid(QWidget):
             self.widgets.append(widget)
         self.reflow(force=True)
 
-    def reflow(self, *, force: bool = False) -> None:
+    def reflow(self, *, force: bool = False, available_width: int | None = None) -> None:
+        measured_width = self.width() if available_width is None else available_width
         requested_columns = columns_for_width(
-            self.width(),
+            measured_width,
             wide_columns=self.wide_columns,
             medium_columns=self.medium_columns,
             narrow_columns=self.narrow_columns,
         )
-        usable_width = max(0, self.contentsRect().width())
+        usable_width = max(0, measured_width)
         fitting_columns = max(
             1,
             (usable_width + self.spacing)

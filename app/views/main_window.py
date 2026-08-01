@@ -1,7 +1,11 @@
-from PySide6.QtGui import QCloseEvent
+from PySide6.QtCore import QTimer
+from PySide6.QtGui import QCloseEvent, QResizeEvent
 from PySide6.QtWidgets import (
+    QFrame,
     QHBoxLayout,
+    QLabel,
     QMainWindow,
+    QScrollArea,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -21,12 +25,14 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.setWindowTitle("PandaIA BOT")
-        self.setMinimumSize(1024, 700)
+        self.setMinimumSize(900, 650)
         self.resize(1600, 900)
 
         self.pages = QStackedWidget()
         self.sidebar = Sidebar()
         self.controller = AppController(self)
+        self.resize_timer = QTimer(self); self.resize_timer.setSingleShot(True); self.resize_timer.setInterval(60)
+        self.resize_timer.timeout.connect(self.apply_responsive_layout)
 
         self.build_interface()
         self.connect_signals()
@@ -55,9 +61,17 @@ class MainWindow(QMainWindow):
         self.gifts_view = GiftsView(self.controller.spotify_runtime)
 
         self.pages.setObjectName("contentStack")
-        self.pages.addWidget(self.dashboard_view)
-        self.pages.addWidget(self.tiktok_view)
-        self.pages.addWidget(self.gifts_view)
+        self.page_by_sidebar = [
+            self.dashboard_view, self.tiktok_view,
+            self.placeholder("IA & Personalidad", "Configura la IA desde el Panel Principal."),
+            self.placeholder("Voces (TTS)", "Administra la voz desde el Panel Principal."),
+            self.placeholder("Memoria", "El monitor de memoria está disponible en el Panel Principal."),
+            self.placeholder("Comandos", "La gestión de comandos estará disponible aquí."),
+            self.gifts_view,
+            self.placeholder("Configuración", "Configuración general de PandaIA BOT."),
+            self.placeholder("Registros (Logs)", "Los registros de la sesión aparecerán aquí."),
+        ]
+        for page in self.page_by_sidebar: self.pages.addWidget(page)
 
         body_layout.addWidget(self.sidebar)
         body_layout.addWidget(self.pages, 1)
@@ -127,11 +141,30 @@ class MainWindow(QMainWindow):
         )
         self.gifts_view.settings_changed.connect(self.controller.update_gifts_settings)
 
+    @staticmethod
+    def placeholder(title: str, message: str) -> QScrollArea:
+        scroll = QScrollArea(); scroll.setObjectName("contentScroll"); scroll.setWidgetResizable(True); scroll.setFrameShape(QFrame.Shape.NoFrame)
+        content = QWidget(); content.setObjectName("mainContent"); layout = QVBoxLayout(content); layout.setContentsMargins(8, 8, 8, 8)
+        heading = QLabel(title); heading.setObjectName("pageTitle"); text = QLabel(message); text.setObjectName("pageSubtitle"); text.setWordWrap(True)
+        layout.addWidget(heading); layout.addWidget(text); layout.addStretch(); scroll.setWidget(content); return scroll
+
     def change_page(self, page_index: int) -> None:
-        if page_index in (0, 1):
-            self.pages.setCurrentIndex(page_index)
-        elif page_index == 6:
-            self.pages.setCurrentIndex(2)
+        if 0 <= page_index < self.pages.count(): self.pages.setCurrentIndex(page_index)
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event); self.resize_timer.start()
+
+    def apply_responsive_layout(self) -> None:
+        content_width = self.pages.width()
+        compact_sidebar = self.width() < 1180
+        self.sidebar.set_compact(compact_sidebar)
+        QTimer.singleShot(0, lambda: self._apply_content_width(self.pages.width()))
+
+    def _apply_content_width(self, width: int) -> None:
+        self.header.set_available_width(width)
+        self.footer.set_available_width(width)
+        for view in (self.dashboard_view, self.tiktok_view, self.gifts_view):
+            if hasattr(view, "set_available_width"): view.set_available_width(width)
 
     def closeEvent(self, event: QCloseEvent) -> None:
         self.dashboard_view.shutdown_workers()

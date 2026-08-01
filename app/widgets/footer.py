@@ -1,62 +1,30 @@
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (
-    QFrame,
-    QHBoxLayout,
-    QLabel,
-    QScrollArea,
-    QSizePolicy,
-    QWidget,
-)
+from __future__ import annotations
+
+from PySide6.QtWidgets import QGridLayout, QLabel, QSizePolicy, QWidget
+
+from app.widgets.responsive_grid import layout_mode
 
 
-class Footer(QScrollArea):
+class Footer(QWidget):
     def __init__(self) -> None:
-        super().__init__()
+        super().__init__(); self.setObjectName("bottomBar")
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.grid = QGridLayout(self); self.grid.setContentsMargins(12, 8, 12, 8); self.grid.setSpacing(8)
+        self.labels = [
+            QLabel("⚙  CPU: 18%"), QLabel("▦  RAM: 2.1 GB / 8 GB"),
+            QLabel("◉  Internet: <span style='color:#22c55e;'>Estable</span>"),
+            QLabel("●  Guardado automático: <span style='color:#22c55e;'>Activado</span>"),
+            QLabel("◷  Hora: 20:45:30"),
+        ]
+        self.current_mode = ""; self.set_available_width(1600)
 
-        self.setObjectName("bottomBar")
-        self.setWidgetResizable(True)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.setMinimumHeight(55)
-        self.setMaximumHeight(72)
-        self.setFrameShape(QFrame.Shape.NoFrame)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-
-        self.build_interface()
-
-    def build_interface(self) -> None:
-        content = QWidget()
-        content.setObjectName("footerContent")
-        layout = QHBoxLayout(content)
-        layout.setContentsMargins(8, 0, 8, 0)
-        layout.setSpacing(8)
-
-        layout.addWidget(QLabel("⚙  CPU: 18%"))
-        layout.addWidget(self.create_separator())
-        layout.addWidget(QLabel("▦  RAM: 2.1 GB / 8 GB"))
-        layout.addWidget(self.create_separator())
-
-        internet = QLabel(
-            "◉  Internet: "
-            "<span style='color:#22c55e;'>Estable</span>"
-        )
-        layout.addWidget(internet)
-
-        layout.addStretch()
-
-        automatic_save = QLabel(
-            "●  Guardado automático: "
-            "<span style='color:#22c55e;'>Activado</span>"
-        )
-        layout.addWidget(automatic_save)
-
-        layout.addWidget(self.create_separator())
-        layout.addWidget(QLabel("◷  Hora: 20:45:30"))
-        self.setWidget(content)
-
-    def create_separator(self) -> QFrame:
-        separator = QFrame()
-        separator.setObjectName("bottomSeparator")
-        separator.setFixedSize(1, 24)
-
-        return separator
+    def set_available_width(self, width: int) -> None:
+        mode = layout_mode(width)
+        if mode == self.current_mode: return
+        self.current_mode = mode
+        while self.grid.count(): self.grid.takeAt(0)
+        columns = 5 if mode == "wide" else 3 if mode == "medium" else 2
+        for index, label in enumerate(self.labels):
+            label.setToolTip(label.text()); self.grid.addWidget(label, index // columns, index % columns)
+        for column in range(columns): self.grid.setColumnStretch(column, 1)
+        self.updateGeometry()

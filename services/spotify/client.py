@@ -75,6 +75,10 @@ class SpotifyClient:
         value = self.request("GET", "/me/player")
         return value if isinstance(value, dict) else {}
 
+    def playback_queue(self) -> dict[str, object]:
+        value = self.request("GET", "/me/player/queue")
+        return value if isinstance(value, dict) else {"currently_playing": None, "queue": []}
+
     def search_track(self, query: str) -> Track | None:
         data = self.request("GET", "/search?" + urlencode({"q": query, "type": "track", "limit": 10}))
         items = data.get("tracks", {}).get("items", []) if isinstance(data, dict) else []

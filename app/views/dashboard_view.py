@@ -83,6 +83,10 @@ class DashboardView(QScrollArea):
         self.connect_dashboard_signals()
         self.load_ollama_models()
 
+    def set_available_width(self, width: int) -> None:
+        for grid in (self.cards_grid, self.stats_grid, self.memory_grid):
+            grid.reflow(force=True, available_width=width)
+
     def create_statistics(self) -> QFrame:
         frame = QFrame()
         frame.setObjectName("statisticsPanel")
@@ -164,6 +168,8 @@ class DashboardView(QScrollArea):
         self.voice_language_label = QLabel("Idioma:  Español")
         self.voice_engine_label = QLabel("Motor:  Kokoro")
         self.voice_details_label = QLabel("Velocidad: 1.00x · Volumen: 100%")
+        for label in (self.voice_name_label, self.voice_language_label, self.voice_engine_label, self.voice_details_label):
+            label.setWordWrap(True)
         layout.addWidget(visual)
         layout.addWidget(self.voice_name_label)
         layout.addWidget(self.voice_language_label)

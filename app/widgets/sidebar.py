@@ -21,6 +21,8 @@ class Sidebar(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
 
         self.buttons: list[QPushButton] = []
+        self.menu_items: list[tuple[str, str]] = []
+        self.compact = False
 
         self.build_interface()
 
@@ -29,7 +31,7 @@ class Sidebar(QWidget):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(5)
 
-        menu_items = [
+        self.menu_items = [
             ("⌂", "Panel Principal"),
             ("◉", "Conexión TikTok"),
             ("✿", "IA & Personalidad"),
@@ -41,7 +43,7 @@ class Sidebar(QWidget):
             ("▤", "Registros (Logs)"),
         ]
 
-        for index, (icon, text) in enumerate(menu_items):
+        for index, (icon, text) in enumerate(self.menu_items):
             button = QPushButton(f"{icon}    {text}")
             button.setObjectName("sidebarButton")
             button.setCheckable(True)
@@ -60,7 +62,21 @@ class Sidebar(QWidget):
             layout.addWidget(button)
 
         layout.addStretch()
-        layout.addWidget(self.create_profile())
+        self.profile = self.create_profile()
+        layout.addWidget(self.profile)
+
+    def set_compact(self, compact: bool) -> None:
+        if compact == self.compact:
+            return
+        self.compact = compact
+        self.setProperty("compact", compact)
+        self.setMinimumWidth(64 if compact else 190)
+        self.setMaximumWidth(76 if compact else 245)
+        for button, (icon, text) in zip(self.buttons, self.menu_items):
+            button.setText(icon if compact else f"{icon}    {text}")
+            button.setToolTip(text)
+        self.profile.setVisible(not compact)
+        self.style().unpolish(self); self.style().polish(self)
 
     def select_page(self, page_index: int) -> None:
         for index, button in enumerate(self.buttons):

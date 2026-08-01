@@ -14,8 +14,8 @@ for path in (PROJECT_DIR, SITE_PACKAGES):
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtTest import QSignalSpy
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QLabel
+from PySide6.QtCore import Qt, QSignalBlocker
+from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
 from app.dialogs.voice_dialog import VoiceDialog
 from app.dialogs.personality_dialog import PersonalityDialog
@@ -57,9 +57,9 @@ class ResponsiveUITests(unittest.TestCase):
         central_width = window.centralWidget().contentsRect().width()
         self.assertEqual(window.header.width(), central_width)
         self.assertEqual(window.footer.width(), central_width)
-        self.assertEqual(window.header.horizontalScrollBar().maximum(), 0)
-        self.assertEqual(window.footer.horizontalScrollBar().maximum(), 0)
-        for container in (window.header, window.header.viewport(), window.footer, window.footer.viewport()):
+        self.assertFalse(window.header.findChildren(QPushButton, "windowButton"))
+        self.assertFalse(window.header.findChildren(QPushButton, "closeButton"))
+        for container in (window.header, window.footer):
             color = self.rendered_color(container)
             self.assertLess(self.luminance(color), 80, color.name())
         window.close()
@@ -139,9 +139,9 @@ class ResponsiveUITests(unittest.TestCase):
         with patch.object(DashboardView, "load_ollama_models", lambda self: None):
             dashboard = DashboardView()
         for grid, expected in (
-            (dashboard.cards_grid, ((1300, 4), (900, 2), (600, 1))),
-            (dashboard.stats_grid, ((1300, 5), (900, 3), (600, 1))),
-            (dashboard.memory_grid, ((1300, 4), (900, 2), (600, 1))),
+            (dashboard.cards_grid, ((1400, 4), (900, 2), (600, 1))),
+            (dashboard.stats_grid, ((1400, 5), (900, 3), (600, 1))),
+            (dashboard.memory_grid, ((1400, 4), (900, 2), (600, 1))),
         ):
             original_ids = {id(widget) for widget in grid.widgets}
             for width, columns in expected:
@@ -155,7 +155,7 @@ class ResponsiveUITests(unittest.TestCase):
     def test_dashboard_uses_viewport_width_without_horizontal_clipping(self) -> None:
         with patch.object(DashboardView, "load_ollama_models", lambda self: None):
             dashboard = DashboardView()
-        for width, columns in ((1300, 4), (900, 2), (580, 1)):
+        for width, columns in ((1400, 4), (900, 2), (580, 1)):
             dashboard.resize(width, 700)
             dashboard.show()
             self.app.processEvents()
@@ -168,6 +168,44 @@ class ResponsiveUITests(unittest.TestCase):
             for card in dashboard.cards_grid.widgets:
                 self.assertLessEqual(card.geometry().right(), dashboard.cards_grid.contentsRect().right())
         dashboard.close()
+
+    def test_global_layout_modes_preserve_widgets_and_state(self) -> None:
+        with patch.object(DashboardView, "load_ollama_models", lambda self: None): window = MainWindow()
+        original_cards = tuple(window.header.status_cards)
+        toggle = window.dashboard_view.control_toggles["respond_comments"]
+        with QSignalBlocker(toggle): toggle.setChecked(False)
+        for width, mode, compact in ((1920, "wide", False), (1366, "medium", False), (900, "narrow", True)):
+            window.resize(width, 700); window.show(); self.app.processEvents(); window.apply_responsive_layout(); self.app.processEvents()
+            self.assertEqual(window.header.current_mode, mode)
+            self.assertEqual(window.sidebar.compact, compact)
+            self.assertEqual(window.footer.current_mode, mode)
+            self.assertEqual(tuple(window.header.status_cards), original_cards)
+            self.assertFalse(window.dashboard_view.control_toggles["respond_comments"].isChecked())
+        self.assertFalse(bool(window.windowFlags() & Qt.WindowType.FramelessWindowHint))
+        window.close()
+
+    def test_global_grids_follow_real_central_viewport(self) -> None:
+        with patch.object(DashboardView, "load_ollama_models", lambda self: None): window = MainWindow()
+        for width, expected in ((1920, (4, 5, 4, 2)), (1366, (2, 3, 2, 1)), (900, (1, 1, 1, 1))):
+            window.resize(width, 700); window.show(); self.app.processEvents(); window.apply_responsive_layout(); self.app.processEvents()
+            window._apply_content_width(window.pages.width())
+            actual = (window.dashboard_view.cards_grid.current_columns, window.dashboard_view.stats_grid.current_columns,
+                      window.dashboard_view.memory_grid.current_columns, window.tiktok_view.columns.current_columns)
+            self.assertEqual(actual, expected)
+        spy = QSignalSpy(window.dashboard_view.setting_changed)
+        window.dashboard_view.save_dashboard_settings = lambda: None
+        window.dashboard_view.setting_changed.disconnect(window.controller.update_dashboard_setting)
+        for width in (1200, 900, 1500, 960): window.resize(width, 700); window.apply_responsive_layout()
+        window.dashboard_view.control_toggles["read_gifts"].click(); self.app.processEvents()
+        self.assertEqual(spy.count(), 1)
+        window.close()
+
+    def test_all_sidebar_pages_are_reachable(self) -> None:
+        with patch.object(DashboardView, "load_ollama_models", lambda self: None): window = MainWindow()
+        self.assertEqual(window.pages.count(), len(window.sidebar.buttons))
+        for index in range(window.pages.count()):
+            window.change_page(index); self.assertEqual(window.pages.currentIndex(), index)
+        window.close()
 
     def test_control_signal_is_emitted_once_per_click(self) -> None:
         with patch.object(DashboardView, "load_ollama_models", lambda self: None):

@@ -16,6 +16,8 @@ from services.tiktok.gift_image_service import GIFT_CACHE_DIR
 from services.spotify.local_store import SpotifyLocalStore
 from services.spotify.oauth import SCOPES, SpotifyAuthError, SpotifyOAuthPKCE
 from services.spotify.runtime import SpotifyRuntime
+from services.spotify.models import RequestStatus
+from app.widgets.responsive_grid import ResponsiveGrid
 
 
 class SpotifyAuthWorker(QThread):
@@ -46,6 +48,7 @@ class GiftsView(QScrollArea):
         self.auth_worker: SpotifyAuthWorker | None = None
         self._loading = True
         self.settings = dict(runtime.settings)
+        self.responsive_groups: list[ResponsiveGrid] = []
         self.setObjectName("giftsScroll")
         self.setWidgetResizable(True)
         self.setFrameShape(QFrame.Shape.NoFrame)
@@ -83,12 +86,16 @@ class GiftsView(QScrollArea):
         layout = QVBoxLayout(wrapper); layout.setContentsMargins(8, 12, 8, 8); layout.addWidget(panel); layout.addStretch()
         scroll.setWidget(wrapper); return scroll
 
+    def responsive_group(self, widgets: tuple[QWidget, ...], *, wide: int, medium: int = 2) -> ResponsiveGrid:
+        group = ResponsiveGrid(wide_columns=wide, medium_columns=medium, minimum_column_width=150, spacing=8)
+        for widget in widgets: group.add_responsive_widget(widget)
+        self.responsive_groups.append(group); return group
+
     def _animations_tab(self) -> QWidget:
         panel, layout = self.panel("Animaciones de regalos")
         self.animations_enabled = QCheckBox("Activar animaciones")
         self.animation_info = QLabel("Se reutiliza la animación Resplandor circular y las imágenes oficiales cacheadas de TikTok.")
         self.animation_info.setWordWrap(True); self.animation_info.setObjectName("helperText")
-        resource_row = QHBoxLayout()
         self.gift_resource = QComboBox()
         for path in sorted(GIFT_CACHE_DIR.glob("*")):
             if path.is_file() and not path.name.endswith(".tmp"):
@@ -97,34 +104,33 @@ class GiftsView(QScrollArea):
         self.add_assignment.setObjectName("voiceSecondaryButton")
         self.add_assignment.setEnabled(self.gift_resource.count() > 0)
         self.add_assignment.clicked.connect(self.add_selected_assignment)
-        resource_row.addWidget(self.gift_resource, 1); resource_row.addWidget(self.add_assignment)
         self.assignments = QTableWidget(0, 6); self.assignments.setHorizontalHeaderLabels(
             ["Regalo / ID", "Animación", "Estado", "Duración", "Sonido", "Acciones"]
         )
         self.assignments.horizontalHeader().setStretchLastSection(True)
+        self.assignments.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.assignments.setMinimumHeight(220)
         test = QPushButton("Probar animación seleccionada"); test.setObjectName("primaryButton")
         test.clicked.connect(self.test_animation)
-        layout.addWidget(self.animations_enabled); layout.addWidget(self.animation_info); layout.addLayout(resource_row)
+        layout.addWidget(self.animations_enabled); layout.addWidget(self.animation_info)
+        layout.addWidget(self.responsive_group((self.gift_resource, self.add_assignment), wide=2))
         layout.addWidget(self.assignments); layout.addWidget(test)
         return self._tab_scroll(panel)
 
     def _spotify_tab(self) -> QWidget:
         panel, layout = self.panel("Solicitudes musicales Spotify Premium")
-        grid = QGridLayout(); grid.setColumnStretch(1, 1)
         self.client_id = QLineEdit(); self.client_id.setEchoMode(QLineEdit.EchoMode.Password)
         self.save_client = QPushButton("Guardar ID"); self.connect_spotify = QPushButton("Conectar Spotify")
         self.disconnect_spotify = QPushButton("Desconectar cuenta")
         for button in (self.save_client, self.connect_spotify): button.setObjectName("primaryButton")
         self.disconnect_spotify.setObjectName("voiceSecondaryButton")
-        grid.addWidget(QLabel("ID de cliente"), 0, 0); grid.addWidget(self.client_id, 0, 1); grid.addWidget(self.save_client, 0, 2)
-        buttons = QHBoxLayout(); buttons.addWidget(self.connect_spotify); buttons.addWidget(self.disconnect_spotify)
-        grid.addLayout(buttons, 1, 1, 1, 2)
         self.spotify_state = QLabel("No configurado"); self.spotify_state.setObjectName("connectionDisconnected")
         self.spotify_message = QLabel(""); self.spotify_message.setWordWrap(True); self.spotify_message.setObjectName("helperText")
         self.account_label = QLabel("Cuenta: —"); self.device_label = QLabel("Dispositivo activo: —")
         self.playback_label = QLabel("Reproduciendo ahora: —"); self.progress_label = QLabel("Progreso: —")
-        layout.addLayout(grid); layout.addWidget(self.spotify_state); layout.addWidget(self.spotify_message)
+        layout.addWidget(self.responsive_group((QLabel("ID de cliente"), self.client_id, self.save_client), wide=3, medium=1))
+        layout.addWidget(self.responsive_group((self.connect_spotify, self.disconnect_spotify), wide=2))
+        layout.addWidget(self.spotify_state); layout.addWidget(self.spotify_message)
         for label in (self.account_label, self.device_label, self.playback_label, self.progress_label):
             label.setWordWrap(True); layout.addWidget(label)
         controls, controls_layout = self.panel("Controles de solicitudes")
@@ -148,31 +154,45 @@ class GiftsView(QScrollArea):
         self.queue_table = QTableWidget(0, 6); self.queue_table.setHorizontalHeaderLabels(
             ["Posición", "Título", "Artista", "Usuario", "Duración", "Estado"])
         self.queue_table.horizontalHeader().setStretchLastSection(True); self.queue_table.setMinimumHeight(220)
-        row = QHBoxLayout()
-        self.remove_request = QPushButton("Eliminar pendiente"); self.clear_queue = QPushButton("Limpiar cola")
-        self.skip_track = QPushButton("Saltar canción"); self.pause_track = QPushButton("Pausar/Reanudar")
+        self.queue_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.remove_request = QPushButton("Eliminar pendiente"); self.clear_queue = QPushButton("Limpiar solicitudes pendientes")
+        self.clear_queue.setToolTip("Solo elimina solicitudes que todavía no fueron enviadas a Spotify.")
+        self.skip_track = QPushButton("Saltar canción"); self.pause_track = QPushButton("Pausar"); self.resume_track = QPushButton("Reanudar")
         self.refresh_device = QPushButton("Actualizar dispositivo")
-        for button in (self.remove_request, self.clear_queue, self.skip_track, self.pause_track, self.refresh_device):
-            button.setObjectName("voiceSecondaryButton"); row.addWidget(button)
-        queue_layout.addWidget(self.queue_table); queue_layout.addLayout(row); layout.addWidget(queue_panel)
+        for button in (self.remove_request, self.clear_queue, self.skip_track, self.pause_track, self.resume_track, self.refresh_device):
+            button.setObjectName("voiceSecondaryButton")
+        queue_layout.addWidget(self.queue_table)
+        queue_layout.addWidget(self.responsive_group((self.remove_request, self.clear_queue, self.skip_track,
+            self.pause_track, self.resume_track, self.refresh_device), wide=6, medium=3))
+        test_label = QLabel("Prueba manual (no afecta TikTok, Ollama, TTS ni estadísticas)"); test_label.setObjectName("helperText")
+        self.test_search = QLineEdit(); self.test_search.setPlaceholderText("Buscar artista y canción")
+        self.add_test_request = QPushButton("Añadir solicitud de prueba"); self.add_test_request.setObjectName("primaryButton")
+        queue_layout.addWidget(test_label); queue_layout.addWidget(self.responsive_group((self.test_search, self.add_test_request), wide=2))
+        spotify_panel, spotify_layout = self.panel("Cola actual de Spotify")
+        self.spotify_queue_table = QTableWidget(0, 5)
+        self.spotify_queue_table.setHorizontalHeaderLabels(["Posición", "Título", "Artista", "Duración", "Origen"])
+        self.spotify_queue_table.horizontalHeader().setStretchLastSection(True); self.spotify_queue_table.setMinimumHeight(220)
+        self.spotify_queue_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        spotify_layout.addWidget(self.spotify_queue_table)
+        layout.addWidget(queue_panel); layout.addWidget(spotify_panel)
         return self._tab_scroll(panel)
 
     def _overlay_tab(self) -> QWidget:
         panel, layout = self.panel("Overlay para OBS / TikTok Live Studio")
         self.overlay_state = QLabel("URL local del overlay existente")
         self.overlay_url = QLineEdit(OVERLAY_URL); self.overlay_url.setReadOnly(True)
-        buttons = QHBoxLayout(); copy = QPushButton("Copiar URL"); preview = QPushButton("Abrir vista previa")
+        copy = QPushButton("Copiar URL"); preview = QPushButton("Abrir vista previa")
         copy.setObjectName("primaryButton"); preview.setObjectName("voiceSecondaryButton")
         copy.clicked.connect(lambda: QApplication.clipboard().setText(OVERLAY_URL))
         preview.clicked.connect(lambda: webbrowser.open(OVERLAY_URL))
-        buttons.addWidget(copy); buttons.addWidget(preview)
         self.show_animations = QCheckBox("Mostrar animaciones")
         self.show_current = QCheckBox("Mostrar canción actual")
         self.show_next = QCheckBox("Mostrar próxima canción")
         self.show_requester = QCheckBox("Mostrar nombre del solicitante")
         info = QLabel("Fuente de navegador: 1080×1920, fondo transparente. El audio permanece en Spotify/OBS.")
         info.setWordWrap(True); info.setObjectName("helperText")
-        layout.addWidget(self.overlay_state); layout.addWidget(self.overlay_url); layout.addLayout(buttons); layout.addWidget(info)
+        layout.addWidget(self.overlay_state); layout.addWidget(self.overlay_url)
+        layout.addWidget(self.responsive_group((copy, preview), wide=2)); layout.addWidget(info)
         for widget in (self.show_animations, self.show_current, self.show_next, self.show_requester): layout.addWidget(widget)
         return self._tab_scroll(panel)
 
@@ -180,9 +200,12 @@ class GiftsView(QScrollArea):
         self.save_client.clicked.connect(self.save_client_id); self.connect_spotify.clicked.connect(self.start_authorization)
         self.disconnect_spotify.clicked.connect(self.runtime.disconnect); self.refresh_device.clicked.connect(lambda: self.runtime.request_action("refresh"))
         self.clear_queue.clicked.connect(self.clear_pending); self.remove_request.clicked.connect(self.remove_selected)
-        self.skip_track.clicked.connect(lambda: self._playback_action("next")); self.pause_track.clicked.connect(self.toggle_pause)
+        self.skip_track.clicked.connect(lambda: self._playback_action("next")); self.pause_track.clicked.connect(lambda: self._playback_action("pause"))
+        self.resume_track.clicked.connect(lambda: self._playback_action("resume"))
+        self.add_test_request.clicked.connect(lambda: self.runtime.submit_local_request(self.test_search.text()))
         self.runtime.state_changed.connect(self.set_spotify_state); self.runtime.account_changed.connect(self.set_account)
         self.runtime.queue_changed.connect(self.set_queue); self.runtime.playback_changed.connect(self.set_playback)
+        self.runtime.spotify_queue_changed.connect(self.set_spotify_queue)
         for widget in (self.animations_enabled, self.requests_enabled, self.allow_explicit, self.block_duplicates,
                        self.only_connected, self.announce_tts, self.show_animations, self.show_current,
                        self.show_next, self.show_requester): widget.toggled.connect(self.save_settings)
@@ -203,6 +226,10 @@ class GiftsView(QScrollArea):
         self.show_animations.setChecked(bool(overlay.get("show_animations", True))); self.show_current.setChecked(bool(overlay.get("show_current", True)))
         self.show_next.setChecked(bool(overlay.get("show_next", True))); self.show_requester.setChecked(bool(overlay.get("show_requester", True)))
         self.load_assignments()
+        self.set_spotify_state(self.spotify_state.text(), self.spotify_message.text())
+
+    def set_available_width(self, width: int) -> None:
+        for group in self.responsive_groups: group.reflow(force=True, available_width=width)
 
     def values(self) -> dict[str, object]:
         return {"animations_enabled": self.animations_enabled.isChecked(), "requests_enabled": self.requests_enabled.isChecked(),
@@ -242,6 +269,12 @@ class GiftsView(QScrollArea):
 
     def set_spotify_state(self, state: str, message: str) -> None:
         self.spotify_state.setText(state); self.spotify_message.setText(message)
+        authorized = state in {"Conectado", "Sin dispositivo activo"}
+        connected = state == "Conectado"
+        self.connect_spotify.setEnabled(True)
+        self.disconnect_spotify.setEnabled(state != "No configurado")
+        self.refresh_device.setEnabled(authorized); self.add_test_request.setEnabled(authorized)
+        for button in (self.skip_track, self.pause_track, self.resume_track): button.setEnabled(connected)
 
     def set_account(self, data: dict[str, object]) -> None:
         self.account_label.setText(f"Cuenta: {data.get('name', '—')}")
@@ -256,6 +289,8 @@ class GiftsView(QScrollArea):
         self.playback_label.setText(f"Reproduciendo ahora: {item.get('name', '—')} · {artists}")
         self.progress_label.setText(f"Progreso: {self.duration(data.get('progress_ms', 0))} / {self.duration(item.get('duration_ms', 0))}")
         self.pause_track.setProperty("paused", not bool(data.get("is_playing", False)))
+        self.pause_track.setEnabled(bool(data.get("is_playing", False)))
+        self.resume_track.setEnabled(bool(data) and not bool(data.get("is_playing", False)))
 
     @staticmethod
     def duration(milliseconds: object) -> str:
@@ -268,6 +303,16 @@ class GiftsView(QScrollArea):
                                             self.duration(request.track.duration_ms), request.status.value)):
                 self.queue_table.setItem(row, column, QTableWidgetItem(str(value)))
             self.queue_table.item(row, 0).setData(Qt.ItemDataRole.UserRole, request.request_id)
+        pending = any(request.status == RequestStatus.PENDING for request in items)
+        self.remove_request.setEnabled(pending); self.clear_queue.setEnabled(pending)
+
+    def set_spotify_queue(self, tracks) -> None:
+        self.spotify_queue_table.setRowCount(len(tracks))
+        for row, track in enumerate(tracks):
+            position = "Actual" if track.get("current") else str(track.get("position", row))
+            for column, value in enumerate((position, track.get("title", ""), track.get("artist", ""),
+                                            self.duration(track.get("duration_ms", 0)), track.get("origin", ""))):
+                self.spotify_queue_table.setItem(row, column, QTableWidgetItem(str(value)))
 
     def remove_selected(self) -> None:
         row = self.queue_table.currentRow()
@@ -280,9 +325,6 @@ class GiftsView(QScrollArea):
 
     def _playback_action(self, action: str) -> None:
         self.runtime.request_action(action)
-
-    def toggle_pause(self) -> None:
-        self._playback_action("resume" if self.pause_track.property("paused") else "pause")
 
     def load_assignments(self) -> None:
         assignments = self.settings.get("assignments", {})

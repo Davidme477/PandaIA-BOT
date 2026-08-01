@@ -54,14 +54,17 @@ class TikTokView(QScrollArea):
         root.addWidget(title)
         root.addWidget(subtitle)
 
-        columns = ResponsiveGrid(wide_columns=2, medium_columns=2)
-        columns.add_responsive_widget(self.create_account_panel())
-        columns.add_responsive_widget(self.create_information_panel())
+        self.columns = ResponsiveGrid(wide_columns=2, medium_columns=1)
+        self.columns.add_responsive_widget(self.create_account_panel())
+        self.columns.add_responsive_widget(self.create_information_panel())
 
-        root.addWidget(columns)
+        root.addWidget(self.columns)
         root.addWidget(self.create_connection_panel())
         root.addStretch()
         self.setWidget(content)
+
+    def set_available_width(self, width: int) -> None:
+        self.columns.reflow(force=True, available_width=width)
 
     def create_account_panel(self) -> QFrame:
         panel = self.create_panel("Cuenta de TikTok")

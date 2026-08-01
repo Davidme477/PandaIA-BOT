@@ -50,6 +50,7 @@ class FakeSpotify:
     def search_track(self, query): self.searches.append(query); return self.track
     def add_to_queue(self, uri, device_id=""): self.queued.append((uri, device_id))
     def playback(self): return {}
+    def playback_queue(self): return {"currently_playing": None, "queue": []}
 
 
 class SpotifyGiftTests(unittest.TestCase):
@@ -173,6 +174,34 @@ class SpotifyGiftTests(unittest.TestCase):
         runtime = SpotifyRuntime({}, FakeSpotify())
         runtime.stop(); self.assertFalse(runtime.thread.is_alive())
 
+    def test_real_spotify_queue_endpoint_and_origin_mapping(self):
+        captured = []
+        with tempfile.TemporaryDirectory() as directory:
+            store = SpotifyLocalStore(Path(directory) / "local.json")
+            store.save({"access_token": "token", "expires_at": time.time() + 1000})
+            def opener(request, **_kwargs):
+                captured.append(request.full_url)
+                return Response({"currently_playing": None, "queue": []})
+            self.assertEqual(SpotifyClient(store, opener).playback_queue()["queue"], [])
+        self.assertEqual(captured, ["https://api.spotify.com/v1/me/player/queue"])
+        runtime = SpotifyRuntime({}, FakeSpotify())
+        request = runtime.requests.add("ana", self.track())
+        emitted = []; runtime.spotify_queue_changed.connect(emitted.append)
+        runtime._publish_spotify_queue({"currently_playing": {"uri": request.track.uri, "name": request.track.title,
+            "artists": [{"name": request.track.artist}], "duration_ms": request.track.duration_ms},
+            "queue": [{"uri": "spotify:manual", "name": "Manual", "artists": [{"name": "Artista"}], "duration_ms": 1000}]})
+        self.app.processEvents(); runtime.stop()
+        self.assertIn("@ana", emitted[0][0]["origin"])
+        self.assertEqual(emitted[0][1]["origin"], "Añadida manualmente en Spotify")
+
+    def test_local_test_request_uses_spotify_worker_only(self):
+        fake = FakeSpotify(self.track())
+        runtime = SpotifyRuntime({}, fake)
+        self.assertTrue(runtime.submit_local_request("Carlos Rivera Si me muero"))
+        deadline = time.time() + 2
+        while not runtime.requests.snapshot() and time.time() < deadline: self.app.processEvents(); time.sleep(.01)
+        runtime.stop(); self.assertEqual(runtime.requests.snapshot()[0].username, "Prueba local")
+
     def test_gifts_view_is_dark_responsive_and_reachable(self):
         from main import load_stylesheet
         self.app.setStyleSheet(load_stylesheet())
@@ -182,6 +211,10 @@ class SpotifyGiftTests(unittest.TestCase):
         self.assertEqual(window.gifts_view.horizontalScrollBarPolicy().value, 1)
         color = window.gifts_view.viewport().grab().toImage().pixelColor(2, 2)
         self.assertLess(color.red() + color.green() + color.blue(), 180)
+        self.assertEqual(window.gifts_view.spotify_queue_table.columnCount(), 5)
+        self.assertEqual(window.gifts_view.clear_queue.text(), "Limpiar solicitudes pendientes")
+        self.assertEqual(window.gifts_view.pause_track.text(), "Pausar")
+        self.assertEqual(window.gifts_view.resume_track.text(), "Reanudar")
         window.close()
 
 
