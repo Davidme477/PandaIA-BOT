@@ -1,6 +1,7 @@
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QCloseEvent, QResizeEvent
 from PySide6.QtWidgets import (
+    QApplication,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -14,6 +15,7 @@ from PySide6.QtWidgets import (
 from app.views.dashboard_view import DashboardView
 from app.views.tiktok_view import TikTokView
 from app.views.gifts_view import GiftsView
+from app.views.settings_view import SettingsView
 from app.widgets.footer import Footer
 from app.widgets.header import Header
 from app.widgets.sidebar import Sidebar
@@ -59,6 +61,7 @@ class MainWindow(QMainWindow):
         self.dashboard_view = DashboardView()
         self.tiktok_view = TikTokView()
         self.gifts_view = GiftsView(self.controller.spotify_runtime)
+        self.settings_view = SettingsView(self.controller.watchdog_settings)
 
         self.pages.setObjectName("contentStack")
         self.page_by_sidebar = [
@@ -68,7 +71,7 @@ class MainWindow(QMainWindow):
             self.placeholder("Memoria", "El monitor de memoria está disponible en el Panel Principal."),
             self.placeholder("Comandos", "/mensaje → conversar con PandaIA.\na/artista canción → solicitar música."),
             self.gifts_view,
-            self.placeholder("Configuración", "Configuración general de PandaIA BOT."),
+            self.settings_view,
             self.placeholder("Registros (Logs)", "Los registros de la sesión aparecerán aquí."),
         ]
         for page in self.page_by_sidebar: self.pages.addWidget(page)
@@ -140,6 +143,21 @@ class MainWindow(QMainWindow):
             self.dashboard_view.apply_dashboard_settings
         )
         self.gifts_view.settings_changed.connect(self.controller.update_gifts_settings)
+        watchdog = self.controller.live_watchdog
+        self.settings_view.settings_changed.connect(self.controller.update_watchdog_settings)
+        self.settings_view.save_token_requested.connect(watchdog.save_token)
+        self.settings_view.detect_chat_requested.connect(watchdog.detect_chat)
+        self.settings_view.test_telegram_requested.connect(watchdog.test_telegram)
+        self.settings_view.disconnect_telegram_requested.connect(watchdog.disconnect_telegram)
+        self.settings_view.test_alarm_requested.connect(watchdog.test_alarm)
+        self.settings_view.simulate_warning_requested.connect(watchdog.simulate_warning)
+        self.settings_view.stop_alarm_requested.connect(watchdog.stop_alarm)
+        self.settings_view.open_studio_requested.connect(self.controller.open_live_studio)
+        watchdog.status_changed.connect(self.settings_view.apply_status)
+        watchdog.alert_logged.connect(self.settings_view.add_alert)
+        watchdog.banner_changed.connect(self.settings_view.set_banner)
+        watchdog.banner_changed.connect(self.show_watchdog_attention)
+        watchdog.telegram_changed.connect(self.settings_view.set_telegram)
 
     @staticmethod
     def placeholder(title: str, message: str) -> QScrollArea:
@@ -150,6 +168,10 @@ class MainWindow(QMainWindow):
 
     def change_page(self, page_index: int) -> None:
         if 0 <= page_index < self.pages.count(): self.pages.setCurrentIndex(page_index)
+
+    def show_watchdog_attention(self, visible: bool, _text: str) -> None:
+        self.setWindowTitle("⚠ TikTok requiere atención — PandaIA BOT" if visible else "PandaIA BOT")
+        if visible: QApplication.alert(self, 0)
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event); self.resize_timer.start()
@@ -163,7 +185,7 @@ class MainWindow(QMainWindow):
     def _apply_content_width(self, width: int) -> None:
         self.header.set_available_width(width)
         self.footer.set_available_width(width)
-        for view in (self.dashboard_view, self.tiktok_view, self.gifts_view):
+        for view in (self.dashboard_view, self.tiktok_view, self.gifts_view, self.settings_view):
             if hasattr(view, "set_available_width"): view.set_available_width(width)
 
     def closeEvent(self, event: QCloseEvent) -> None:

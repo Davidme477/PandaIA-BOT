@@ -555,3 +555,13 @@ QScrollBar::sub-line:vertical {
 #voiceSlider::handle:horizontal:hover {
     border-color: #a855f7;
 }
+
+#warningBanner {
+    background-color: #7f1d1d;
+    border: 2px solid #ef4444;
+    border-radius: 10px;
+    color: #ffffff;
+    font-size: 16px;
+    font-weight: 700;
+    padding: 12px;
+}

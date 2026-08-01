@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import subprocess
 import sys
 import time
@@ -25,6 +26,7 @@ from services.overlay.gift_animations import GIFT_DEFAULTS, GiftAnimationManager
 from services.overlay.events import post_overlay_event
 from services.live.command_router import CommandRouter
 from services.spotify.request_queue import spotify_defaults
+from services.live_watchdog.runtime import LiveWatchdog, WATCHDOG_DEFAULTS
 
 OVERLAY_HEALTH_URL = "http://127.0.0.1:5050/health"
 OLLAMA_TAGS_URL = "http://127.0.0.1:11434/api/tags"
@@ -293,6 +295,10 @@ class AppController(QObject):
         self.spotify_runtime.announce_callback = self.announce_music_request
         self.gift_animations = GiftAnimationManager(self.gifts_settings)
         self.spotify_runtime.overlay_event.connect(post_overlay_event)
+        raw_watchdog = settings.get("live_watchdog", {})
+        self.watchdog_settings = {**WATCHDOG_DEFAULTS, **(raw_watchdog if isinstance(raw_watchdog, dict) else {})}
+        self.live_watchdog = LiveWatchdog(self.watchdog_settings)
+        self.live_watchdog.start()
 
     def publish_initial_state(self) -> None:
         self.publish_voice_settings()
@@ -357,6 +363,7 @@ class AppController(QObject):
         self.bot_status_changed.emit("DETENIENDO", "statusRed")
         self.tiktok_status_changed.emit("DESCONECTANDO", "statusRed")
         self.log_message.emit("Desconectando PandaIA.")
+        self.live_watchdog.set_live_state(False, manual=True)
         self.worker.request_stop()
 
     @Slot(str, object)
@@ -461,11 +468,13 @@ class AppController(QObject):
         elif status in {"overlay_starting", "overlay_ready", "tiktok_connecting"}:
             self.connection_state_changed.emit("connecting", message)
         elif status == "tiktok_connected":
+            self.live_watchdog.set_live_state(True)
             self.spotify_runtime.set_tiktok_connected(True)
             self.bot_status_changed.emit("● CONECTADO", "statusGreen")
             self.tiktok_status_changed.emit("LIVE", "statusRed")
             self.connection_state_changed.emit("connected", message)
         elif status == "tiktok_disconnected":
+            self.live_watchdog.set_live_state(False, manual=False)
             self.set_disconnected(message)
 
     @Slot(str)
@@ -515,6 +524,21 @@ class AppController(QObject):
         self.write_settings(settings)
         self.gifts_settings_changed.emit(dict(self.gifts_settings))
 
+    def update_watchdog_settings(self, values: dict[str, object]) -> None:
+        self.watchdog_settings.update(values); self.live_watchdog.update_settings(values)
+        self.live_watchdog.set_enabled(bool(self.watchdog_settings.get("enabled")))
+        settings = self.read_settings(); settings["live_watchdog"] = self.watchdog_settings; self.write_settings(settings)
+
+    def open_live_studio(self) -> None:
+        candidates = [
+            Path(os.environ.get("LOCALAPPDATA", "")) / "TikTok LIVE Studio" / "TikTok LIVE Studio.exe",
+            Path(os.environ.get("PROGRAMFILES", "")) / "TikTok LIVE Studio" / "TikTok LIVE Studio.exe",
+        ]
+        executable = next((path for path in candidates if path.is_file()), None)
+        if executable is None: self.log_message.emit("No se encontró TikTok Live Studio. Ábrelo manualmente desde Windows."); return
+        try: subprocess.Popen([str(executable)], creationflags=subprocess.CREATE_NO_WINDOW)
+        except OSError as error: self.log_message.emit(f"No se pudo abrir TikTok Live Studio: {error}")
+
     def announce_music_request(self, text: str) -> None:
         try:
             self.voice_manager.speak(
@@ -548,6 +572,7 @@ class AppController(QObject):
         write_settings_atomic(CONFIG_FILE, settings)
 
     def shutdown(self) -> None:
+        self.live_watchdog.shutdown()
         self.spotify_runtime.stop()
         if self.worker is not None:
             self.worker.request_stop()
