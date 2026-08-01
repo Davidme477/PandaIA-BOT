@@ -29,8 +29,18 @@ app = Flask(
     static_folder=str(BASE_DIR / "static"),
 )
 
-event_queue: deque[dict[str, Any]] = deque()
+event_queue: deque[dict[str, Any]] = deque(maxlen=256)
+client_cursors: dict[str, int] = {}
+event_sequence = 0
 queue_lock = Lock()
+
+
+def enqueue_gift(event: dict[str, Any]) -> int:
+    global event_sequence
+    event_sequence += 1
+    stored = dict(event); stored["_overlay_sequence"] = event_sequence
+    event_queue.append(stored)
+    return event_sequence
 
 
 @app.get("/overlay")
@@ -61,12 +71,14 @@ def next_event():
     El evento se elimina de la cola solamente cuando el
     overlay lo solicita.
     """
+    client_id = str(request.args.get("client_id", "legacy")).strip()[:64] or "legacy"
     with queue_lock:
-        gift_events = deque(item for item in event_queue if item.get("type") == "gift")
-        event_queue.clear()
-        event = gift_events.popleft() if gift_events else None
-        event_queue.extend(gift_events)
-        remaining_events = len(event_queue)
+        cursor = client_cursors.get(client_id, 0)
+        available = [item for item in event_queue if item.get("type") == "gift" and int(item.get("_overlay_sequence", 0)) > cursor]
+        stored_event = available[0] if available else None
+        if stored_event is not None: client_cursors[client_id] = int(stored_event["_overlay_sequence"])
+        remaining_events = max(0, len(available) - 1)
+        event = {key: value for key, value in stored_event.items() if key != "_overlay_sequence"} if stored_event else None
 
     return jsonify(
         {
@@ -165,10 +177,12 @@ def add_event():
 
     quantity = max(1, min(quantity, 999))
 
-    local_image_path = get_gift_image(
-        gift_id=gift_id,
-        image_url=official_image_url,
-    )
+    local_image_path = None
+    if official_image_url.startswith("/gift-assets/"):
+        candidate = (GIFT_CACHE_DIR / Path(official_image_url).name).resolve()
+        if candidate.parent == GIFT_CACHE_DIR.resolve() and candidate.is_file(): local_image_path = candidate
+    else:
+        local_image_path = get_gift_image(gift_id=gift_id, image_url=official_image_url)
 
     if local_image_path is None:
         return (
@@ -205,7 +219,7 @@ def add_event():
     event = sanitize_event(event)
 
     with queue_lock:
-        event_queue.append(event)
+        enqueue_gift(event)
         queue_position = len(event_queue)
 
     return jsonify(
@@ -307,7 +321,7 @@ def test_gift():
     }
 
     with queue_lock:
-        event_queue.append(event)
+        enqueue_gift(event)
         queue_position = len(event_queue)
 
     return jsonify(
@@ -331,6 +345,7 @@ def clear_events():
     with queue_lock:
         removed_events = len(event_queue)
         event_queue.clear()
+        client_cursors.clear()
 
     return jsonify(
         {

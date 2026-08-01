@@ -11,6 +11,9 @@ const ambientLight = document.getElementById("ambient-light");
 
 let animationRunning = false;
 let pollingEnabled = true;
+const overlayClientId = sessionStorage.getItem("pandaia-overlay-client-id") ||
+    (window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : `overlay-${Date.now()}-${Math.random()}`);
+sessionStorage.setItem("pandaia-overlay-client-id", overlayClientId);
 
 
 function sleep(milliseconds) {
@@ -200,7 +203,7 @@ async function requestNextEvent() {
 
     try {
         const response = await fetch(
-            "/api/events/next",
+            `/api/events/next?client_id=${encodeURIComponent(overlayClientId)}`,
             {
                 method: "GET",
                 cache: "no-store",

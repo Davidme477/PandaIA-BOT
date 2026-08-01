@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 
 from config.settings_store import read_settings
 from services.overlay.events import OVERLAY_URL, post_overlay_event
+from services.tiktok.gift_image_service import find_cached_gift, get_overlay_image_url
 from services.tiktok.gift_image_service import GIFT_CACHE_DIR
 from services.spotify.local_store import SpotifyLocalStore
 from services.spotify.oauth import SCOPES, SpotifyAuthError, SpotifyOAuthPKCE
@@ -190,8 +191,9 @@ class GiftsView(QScrollArea):
         preview.clicked.connect(lambda: webbrowser.open(OVERLAY_URL))
         info = QLabel("Fuente de navegador: 1080×1920, fondo transparente. El audio permanece en Spotify/OBS.")
         info.setWordWrap(True); info.setObjectName("helperText")
+        self.overlay_test_status = QLabel(""); self.overlay_test_status.setObjectName("helperText"); self.overlay_test_status.setWordWrap(True)
         layout.addWidget(self.overlay_state); layout.addWidget(self.overlay_url)
-        layout.addWidget(self.responsive_group((copy, preview), wide=2)); layout.addWidget(info)
+        layout.addWidget(self.responsive_group((copy, preview), wide=2)); layout.addWidget(info); layout.addWidget(self.overlay_test_status)
         return self._tab_scroll(panel)
 
     def _connect(self) -> None:
@@ -353,10 +355,14 @@ class GiftsView(QScrollArea):
         self.test_animation_id(self.assignments.item(row, 0).text())
 
     def test_animation_id(self, gift_id: str) -> None:
-        index = self.gift_resource.findText(gift_id)
-        post_overlay_event({"type": "gift", "gift_id": gift_id, "gift_name": gift_id, "quantity": 1,
-                            "username": "Prueba local", "animation": "Resplandor circular", "test": True,
-                            "image_url": f"/gift-assets/{self.gift_resource.itemData(index) or gift_id + '.png'}"})
+        cached_image = find_cached_gift(gift_id)
+        if cached_image is None:
+            self.overlay_test_status.setText("Prueba rechazada: no existe una imagen en cache/gifts para este regalo.")
+            return
+        sent = post_overlay_event({"type": "gift", "gift_id": gift_id, "gift_name": gift_id, "quantity": 1,
+                                   "username": "Prueba local", "animation": "Resplandor circular", "test": True,
+                                   "image_url": get_overlay_image_url(cached_image)})
+        self.overlay_test_status.setText("Prueba enviada al overlay." if sent else "Prueba rechazada: el overlay no está disponible.")
 
     def toggle_assignment(self, gift_id: str) -> None:
         assignments = dict(self.settings.get("assignments", {})); value = dict(assignments.get(gift_id, {}))

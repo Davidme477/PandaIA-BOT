@@ -24,7 +24,7 @@ from PySide6.QtWidgets import QApplication
 from app.views.dashboard_view import DashboardView
 from app.views.main_window import MainWindow
 from core.app_controller import PandaWorker
-from overlay.server import app, event_queue, queue_lock
+from overlay.server import app, client_cursors, enqueue_gift, event_queue, queue_lock
 from services.overlay.events import OVERLAY_URL, sanitize_event, sanitize_text
 from services.overlay.gift_animations import GiftAnimationManager
 from services.spotify.client import SpotifyAPIError, SpotifyClient
@@ -159,8 +159,7 @@ class SpotifyGiftTests(unittest.TestCase):
         self.assertEqual(OVERLAY_URL, "http://127.0.0.1:5050/overlay")
         self.assertNotIn("<", sanitize_text("<script>alert(1)</script>"))
         with self.assertRaises(ValueError): sanitize_event({"type": "music_request", "title": "Tema"})
-        with queue_lock: event_queue.clear()
-        with queue_lock: event_queue.append({"type": "gift", "gift_id": "1", "gift_name": "Rose"})
+        with queue_lock: event_queue.clear(); client_cursors.clear(); enqueue_gift({"type": "gift", "gift_id": "1", "gift_name": "Rose"})
         for event_type in ("music_request", "playback"):
             response = app.test_client().post("/api/events", json={"type": event_type, "title": "Tema", "username": "ana"})
             self.assertEqual(response.status_code, 400)
@@ -171,8 +170,8 @@ class SpotifyGiftTests(unittest.TestCase):
 
     def test_accidental_music_in_queue_is_discarded_before_gift(self):
         with queue_lock:
-            event_queue.clear(); event_queue.append({"type": "music_request", "title": "No mostrar"})
-            event_queue.append({"type": "gift", "gift_id": "2", "gift_name": "TikTok"})
+            event_queue.clear(); client_cursors.clear(); event_queue.append({"type": "music_request", "title": "No mostrar"})
+            enqueue_gift({"type": "gift", "gift_id": "2", "gift_name": "TikTok"})
         payload = app.test_client().get("/api/events/next").get_json()
         self.assertEqual(payload["event"]["type"], "gift"); self.assertEqual(payload["remaining_events"], 0)
 
@@ -180,6 +179,15 @@ class SpotifyGiftTests(unittest.TestCase):
         html = app.test_client().get("/overlay").get_data(as_text=True)
         css = (PROJECT_DIR / "overlay/static/css/overlay.css").read_text(encoding="utf-8")
         self.assertNotIn("music-module", html); self.assertIn("background: transparent", css)
+
+    def test_gift_is_broadcast_once_to_each_overlay_client(self):
+        with queue_lock:
+            event_queue.clear(); client_cursors.clear(); enqueue_gift({"type":"gift","gift_id":"9","gift_name":"Rose"})
+        client = app.test_client()
+        first = client.get("/api/events/next?client_id=chrome").get_json()["event"]
+        second = client.get("/api/events/next?client_id=live-studio").get_json()["event"]
+        duplicate = client.get("/api/events/next?client_id=chrome").get_json()["event"]
+        self.assertEqual(first, second); self.assertIsNone(duplicate)
 
     def test_gift_and_test_gift_reach_overlay(self):
         from unittest.mock import patch
@@ -242,6 +250,15 @@ class SpotifyGiftTests(unittest.TestCase):
         self.assertEqual(window.gifts_view.clear_queue.text(), "Limpiar solicitudes pendientes")
         self.assertEqual(window.gifts_view.pause_track.text(), "Pausar")
         self.assertEqual(window.gifts_view.resume_track.text(), "Reanudar")
+        with patch("app.views.gifts_view.find_cached_gift", return_value=None):
+            window.gifts_view.test_animation_id("sin-cache")
+        self.assertIn("Prueba rechazada", window.gifts_view.overlay_test_status.text())
+        with patch("app.views.gifts_view.find_cached_gift", return_value=Path("cache/gifts/5655.png")), patch(
+            "app.views.gifts_view.post_overlay_event", return_value=True
+        ) as sender:
+            window.gifts_view.test_animation_id("5655")
+        self.assertIn("Prueba enviada", window.gifts_view.overlay_test_status.text())
+        self.assertEqual(sender.call_args.args[0]["image_url"], "/gift-assets/5655.png")
         window.close()
 
 

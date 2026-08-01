@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from typing import Protocol
 
 from TikTokLive import TikTokLiveClient
 from TikTokLive.events import (
@@ -27,7 +28,9 @@ StatusCallback = Callable[[str, str], None]
 ActivityCallback = Callable[[str, str, str, str], None]
 CommentCallback = Callable[[str, str], None]
 GiftCallback = Callable[[str, str, int], None]
-GiftAnimationCallback = Callable[[str, str, str, int, str, str], None]
+class GiftAnimationCallback(Protocol):
+    def __call__(self, *, gift_id: str, gift_name: str, quantity: int,
+                 username: str, image_url: str = "", event_id: str = "") -> object: ...
 StatsCallback = Callable[[LiveStats], None]
 ResetCallback = Callable[[], None]
 
@@ -340,10 +343,17 @@ class TikTokService:
             if self.gift_callback is not None:
                 self.gift_callback(str(sender), gift_name, quantity)
             if self.gift_animation_callback is not None:
-                self.gift_animation_callback(
-                    gift_id, gift_name, str(sender), quantity, image_url,
-                    str(getattr(event, "id", "")),
-                )
+                try:
+                    self.gift_animation_callback(
+                        gift_id=gift_id,
+                        gift_name=gift_name,
+                        quantity=quantity,
+                        username=str(sender),
+                        image_url=image_url,
+                        event_id=str(getattr(event, "id", "")),
+                    )
+                except Exception as error:
+                    print("[TikTokService] Error al enviar la animación del regalo:", error)
 
             local_image = get_gift_image(
                 gift_id=gift_id,
