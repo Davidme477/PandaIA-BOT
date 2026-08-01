@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import Callable
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
 
 from TikTokLive import TikTokLiveClient
 from TikTokLive.events import (
@@ -22,15 +19,15 @@ from services.tiktok.gift_image_service import (
     get_overlay_image_url,
 )
 from services.tiktok.live_state import LiveState, LiveStats
+from services.overlay.events import post_overlay_event
 
 
 TIKTOK_USERNAME = "@latidosmusicales3"
-OVERLAY_EVENTS_URL = "http://127.0.0.1:5050/api/events"
-
 StatusCallback = Callable[[str, str], None]
 ActivityCallback = Callable[[str, str, str, str], None]
 CommentCallback = Callable[[str, str], None]
 GiftCallback = Callable[[str, str, int], None]
+GiftAnimationCallback = Callable[[str, str, str, int, str, str], None]
 StatsCallback = Callable[[LiveStats], None]
 ResetCallback = Callable[[], None]
 
@@ -61,65 +58,13 @@ def send_event_to_overlay(
     quantity: int,
     image_url: str,
 ) -> bool:
-    payload = {
+    return post_overlay_event({
         "type": "gift",
         "gift_id": gift_id,
         "gift_name": gift_name,
         "quantity": quantity,
         "image_url": image_url,
-    }
-
-    request_data = json.dumps(payload).encode("utf-8")
-
-    overlay_request = Request(
-        OVERLAY_EVENTS_URL,
-        data=request_data,
-        method="POST",
-        headers={
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-    )
-
-    try:
-        with urlopen(
-            overlay_request,
-            timeout=10,
-        ) as response:
-            response_data = response.read().decode("utf-8")
-
-        print(
-            "[TikTokService] Regalo enviado al overlay:",
-            response_data,
-        )
-
-        return True
-
-    except HTTPError as error:
-        error_content = error.read().decode(
-            "utf-8",
-            errors="replace",
-        )
-
-        print(
-            "[TikTokService] El overlay rechazó el evento:",
-            error.code,
-            error_content,
-        )
-
-    except URLError as error:
-        print(
-            "[TikTokService] No se pudo conectar al overlay:",
-            error,
-        )
-
-    except Exception as error:
-        print(
-            "[TikTokService] Error enviando el regalo:",
-            error,
-        )
-
-    return False
+    })
 
 
 class TikTokService:
@@ -130,6 +75,7 @@ class TikTokService:
         activity_callback: ActivityCallback | None = None,
         comment_callback: CommentCallback | None = None,
         gift_callback: GiftCallback | None = None,
+        gift_animation_callback: GiftAnimationCallback | None = None,
         stats_callback: StatsCallback | None = None,
         reset_callback: ResetCallback | None = None,
     ) -> None:
@@ -138,6 +84,7 @@ class TikTokService:
         self.activity_callback = activity_callback
         self.comment_callback = comment_callback
         self.gift_callback = gift_callback
+        self.gift_animation_callback = gift_animation_callback
         self.stats_callback = stats_callback
         self.reset_callback = reset_callback
         self.live_state = LiveState()
@@ -392,6 +339,11 @@ class TikTokService:
             )
             if self.gift_callback is not None:
                 self.gift_callback(str(sender), gift_name, quantity)
+            if self.gift_animation_callback is not None:
+                self.gift_animation_callback(
+                    gift_id, gift_name, str(sender), quantity, image_url,
+                    str(getattr(event, "id", "")),
+                )
 
             local_image = get_gift_image(
                 gift_id=gift_id,
@@ -419,22 +371,6 @@ class TikTokService:
                 "URL local:",
                 local_image_url,
             )
-
-            sent = send_event_to_overlay(
-                gift_id=gift_id,
-                gift_name=gift_name,
-                quantity=quantity,
-                image_url=image_url,
-            )
-
-            if sent:
-                print(
-                    "Resultado: enviado al overlay."
-                )
-            else:
-                print(
-                    "Resultado: no enviado al overlay."
-                )
 
             print("=" * 60)
 

@@ -63,3 +63,4 @@ htmlcov/
 *.tmp
 *.bak
 *.swp
+config/spotify_local.json

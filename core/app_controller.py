@@ -20,6 +20,9 @@ from services.live.comment_response_queue import CommentResponseQueue
 from services.live.session_memory import MemorySnapshot
 from services.tts.voice_manager import VoiceManager
 from services.ollama.personalities import dashboard_defaults
+from services.spotify.runtime import SpotifyRuntime
+from services.overlay.gift_animations import GIFT_DEFAULTS, GiftAnimationManager
+from services.overlay.events import post_overlay_event
 
 OVERLAY_HEALTH_URL = "http://127.0.0.1:5050/health"
 OLLAMA_TAGS_URL = "http://127.0.0.1:11434/api/tags"
@@ -39,6 +42,8 @@ class PandaWorker(QThread):
         username: str,
         dashboard_settings: dict[str, object],
         tts_settings: dict[str, object],
+        music_callback=None,
+        gift_animation_callback=None,
     ) -> None:
         super().__init__()
         self.username = username
@@ -54,6 +59,8 @@ class PandaWorker(QThread):
             log_callback=self.forward_log,
             memory_callback=self.forward_memory,
         )
+        self.music_callback = music_callback
+        self.gift_animation_callback = gift_animation_callback
 
     def run(self) -> None:
         try:
@@ -92,6 +99,7 @@ class PandaWorker(QThread):
                 activity_callback=self.forward_activity,
                 comment_callback=self.forward_comment,
                 gift_callback=self.forward_gift,
+                gift_animation_callback=self.forward_gift_animation,
                 stats_callback=self.forward_live_stats,
                 reset_callback=self.live_session_reset.emit,
             )
@@ -153,10 +161,20 @@ class PandaWorker(QThread):
         self.activity_received.emit(icon, title, user, amount)
 
     def forward_comment(self, username: str, comment: str) -> None:
+        if self.music_callback is not None and self.music_callback(username, comment):
+            return
         self.response_queue.enqueue(username, comment)
 
     def forward_gift(self, username: str, gift_name: str, quantity: int) -> None:
         self.response_queue.enqueue_gift(username, gift_name, quantity)
+
+    def forward_gift_animation(self, gift_id: str, gift_name: str, username: str,
+                               quantity: int, image_url: str, event_id: str) -> None:
+        if self.gift_animation_callback is not None:
+            self.gift_animation_callback(
+                gift_id=gift_id, gift_name=gift_name, username=username,
+                quantity=quantity, image_url=image_url, event_id=event_id,
+            )
 
     def update_setting(self, key: str, value: object) -> None:
         self.response_queue.update_setting(key, value)
@@ -225,6 +243,7 @@ class AppController(QObject):
     memory_changed = Signal(object)
     voice_settings_changed = Signal(str, str, str, float, float)
     dashboard_settings_changed = Signal(object)
+    gifts_settings_changed = Signal(object)
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -238,6 +257,12 @@ class AppController(QObject):
             raw_dashboard if isinstance(raw_dashboard, dict) else {}
         )
         self.tts_settings = self.normalize_tts(settings.get("tts", {}))
+        raw_gifts = settings.get("gifts", {})
+        self.gifts_settings = {**GIFT_DEFAULTS, **(raw_gifts if isinstance(raw_gifts, dict) else {})}
+        self.spotify_runtime = SpotifyRuntime(self.gifts_settings)
+        self.spotify_runtime.announce_callback = self.announce_music_request
+        self.gift_animations = GiftAnimationManager(self.gifts_settings)
+        self.spotify_runtime.overlay_event.connect(post_overlay_event)
 
     def publish_initial_state(self) -> None:
         self.publish_voice_settings()
@@ -272,6 +297,8 @@ class AppController(QObject):
             username,
             dict(self.dashboard_settings),
             dict(self.tts_settings),
+            music_callback=self.spotify_runtime.submit_comment,
+            gift_animation_callback=self.gift_animations.handle_gift,
         )
         self.worker.status_changed.connect(self.handle_worker_status)
         self.worker.activity_received.connect(self.forward_activity)
@@ -399,6 +426,7 @@ class AppController(QObject):
         elif status in {"overlay_starting", "overlay_ready", "tiktok_connecting"}:
             self.connection_state_changed.emit("connecting", message)
         elif status == "tiktok_connected":
+            self.spotify_runtime.set_tiktok_connected(True)
             self.bot_status_changed.emit("● CONECTADO", "statusGreen")
             self.tiktok_status_changed.emit("LIVE", "statusRed")
             self.connection_state_changed.emit("connected", message)
@@ -426,6 +454,7 @@ class AppController(QObject):
         )
 
     def set_disconnected(self, message: str) -> None:
+        self.spotify_runtime.set_tiktok_connected(False)
         self.bot_status_changed.emit("DESCONECTADO", "statusRed")
         self.tiktok_status_changed.emit("DESCONECTADO", "statusRed")
         self.connection_state_changed.emit("disconnected", message)
@@ -440,6 +469,25 @@ class AppController(QObject):
         settings = self.read_settings()
         settings["tts"] = self.tts_settings
         self.write_settings(settings)
+
+    def update_gifts_settings(self, values: dict[str, object]) -> None:
+        self.gifts_settings.update(values)
+        self.spotify_runtime.update_settings(values)
+        self.gift_animations.update_settings(values)
+        settings = self.read_settings()
+        settings["gifts"] = self.gifts_settings
+        self.write_settings(settings)
+        self.gifts_settings_changed.emit(dict(self.gifts_settings))
+
+    def announce_music_request(self, text: str) -> None:
+        try:
+            self.voice_manager.speak(
+                engine=str(self.tts_settings["engine"]), text=text,
+                voice=str(self.tts_settings["voice"]), speed=float(self.tts_settings["speed"]),
+                volume=float(self.tts_settings["volume"]),
+            )
+        except Exception as error:
+            self.log_message.emit(f"No se pudo anunciar la solicitud musical: {error}")
 
     @staticmethod
     def normalize_tts(raw_settings: object) -> dict[str, object]:
@@ -464,7 +512,7 @@ class AppController(QObject):
         write_settings_atomic(CONFIG_FILE, settings)
 
     def shutdown(self) -> None:
-        if self.worker is None:
-            return
-        self.worker.request_stop()
-        self.worker.wait(5000)
+        self.spotify_runtime.stop()
+        if self.worker is not None:
+            self.worker.request_stop()
+            self.worker.wait(5000)

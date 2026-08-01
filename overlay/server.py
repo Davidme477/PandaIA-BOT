@@ -18,6 +18,7 @@ from services.tiktok.gift_image_service import (
     get_gift_image,
     get_overlay_image_url,
 )
+from services.overlay.events import sanitize_event
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -116,18 +117,14 @@ def add_event():
         )
 
     if event_type != "gift":
-        return (
-            jsonify(
-                {
-                    "ok": False,
-                    "error": (
-                        "Actualmente este endpoint solamente "
-                        "acepta eventos de tipo gift."
-                    ),
-                }
-            ),
-            400,
-        )
+        try:
+            event = sanitize_event(payload)
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "Evento no admitido."}), 400
+        with queue_lock:
+            event_queue.append(event)
+            queue_position = len(event_queue)
+        return jsonify({"ok": True, "queue_position": queue_position, "event": event})
 
     gift_id = str(
         payload.get("gift_id", "")
@@ -203,7 +200,13 @@ def add_event():
         "gift_name": gift_name,
         "quantity": quantity,
         "image_url": local_image_url,
+        "username": str(payload.get("username", "")),
+        "animation": str(payload.get("animation", "Resplandor circular")),
+        "event_id": str(payload.get("event_id", "")),
+        "test": bool(payload.get("test", False)),
+        "duration_ms": payload.get("duration_ms", 4200),
     }
+    event = sanitize_event(event)
 
     with queue_lock:
         event_queue.append(event)

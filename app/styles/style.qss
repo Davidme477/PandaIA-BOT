@@ -141,8 +141,43 @@ QMainWindow,
 #tiktokScroll,
 #tiktokScroll > QWidget,
 #tiktokContent,
+#giftsScroll,
+#giftsScroll > QWidget,
+#giftsContent,
+#featureScroll,
+#featureScroll > QWidget,
+#featureContent,
 #responsiveGrid {
     background-color: transparent;
+}
+
+#featureTabs::pane {
+    border: 1px solid #2a3448;
+    border-radius: 10px;
+    background-color: #060b15;
+}
+
+#featureTabs QTabBar::tab {
+    background-color: #101629;
+    color: #d7dbe3;
+    padding: 10px 18px;
+    margin-right: 3px;
+}
+
+#featureTabs QTabBar::tab:selected { background-color: #4c0b91; color: white; }
+
+QTableWidget {
+    background-color: #0c1320;
+    alternate-background-color: #101829;
+    border: 1px solid #354057;
+    gridline-color: #273043;
+}
+
+QHeaderView::section {
+    background-color: #151c2a;
+    color: #f4f4f5;
+    border: none;
+    padding: 8px;
 }
 
 #statisticsPanel,
@@ -180,7 +215,8 @@ QMainWindow,
 }
 
 QComboBox,
-QLineEdit {
+QLineEdit,
+QSpinBox {
     background-color: #0c1320;
     border: 1px solid #354057;
     border-radius: 8px;
@@ -189,7 +225,8 @@ QLineEdit {
 }
 
 QComboBox:hover,
-QLineEdit:focus {
+QLineEdit:focus,
+QSpinBox:focus {
     border: 1px solid #7c3aed;
 }
 
@@ -326,6 +363,13 @@ QCheckBox::indicator:checked {
 #footerContent {
     background-color: #050914;
     border-top: 1px solid #20283a;
+}
+
+QSpinBox::up-button,
+QSpinBox::down-button {
+    background-color: #151c2a;
+    border: none;
+    width: 20px;
 }
 
 #bottomBar QLabel {
