@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from collections import deque
+import hmac
+import logging
+import os
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -33,6 +36,38 @@ event_queue: deque[dict[str, Any]] = deque(maxlen=256)
 client_cursors: dict[str, int] = {}
 event_sequence = 0
 queue_lock = Lock()
+ACCESS_TOKEN = os.environ.get("PANDAIA_OVERLAY_ACCESS_TOKEN", "")
+logging.getLogger("werkzeug").disabled = True
+
+
+def is_external_request() -> bool:
+    host = request.host.split(":", 1)[0].casefold()
+    return bool(request.headers.get("CF-Connecting-IP")) or host not in {"127.0.0.1", "localhost"}
+
+
+def valid_external_access() -> bool:
+    supplied = str(request.args.get("access", ""))
+    return bool(ACCESS_TOKEN and supplied and hmac.compare_digest(supplied, ACCESS_TOKEN))
+
+
+@app.before_request
+def protect_overlay():
+    protected_get = request.path == "/overlay" or request.path == "/api/events/next" or request.path.startswith("/gift-assets/")
+    if request.path == "/health" and request.args.get("access") is not None and not valid_external_access():
+        return jsonify({"ok": False, "error": "Token de instancia incorrecto."}), 403
+    if request.method == "GET" and protected_get and is_external_request() and not valid_external_access():
+        return jsonify({"ok": False, "error": "Acceso no autorizado."}), 403
+    if request.method == "POST" and request.path in {"/api/events", "/api/test/gift", "/api/events/clear"} and is_external_request():
+        return jsonify({"ok": False, "error": "Publicación externa no permitida."}), 403
+    return None
+
+
+@app.after_request
+def disable_overlay_cache(response):
+    if request.path == "/overlay" or request.path == "/api/events/next" or request.path.startswith("/gift-assets/"):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"; response.headers["Expires"] = "0"
+    return response
 
 
 def enqueue_gift(event: dict[str, Any]) -> int:

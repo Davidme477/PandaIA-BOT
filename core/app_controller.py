@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import secrets
 import subprocess
 import sys
 import time
@@ -26,6 +27,7 @@ from services.overlay.gift_animations import GIFT_DEFAULTS, GiftAnimationManager
 from services.live.command_router import CommandRouter
 from services.spotify.request_queue import spotify_defaults
 from services.live_watchdog.runtime import LiveWatchdog, WATCHDOG_DEFAULTS
+from services.overlay.cloudflare_tunnel import CloudflareTunnel
 
 OVERLAY_HEALTH_URL = "http://127.0.0.1:5050/health"
 OLLAMA_TAGS_URL = "http://127.0.0.1:11434/api/tags"
@@ -126,30 +128,13 @@ class PandaWorker(QThread):
                 self.stop_overlay()
 
     def ensure_overlay(self) -> None:
-        if self.check_url(OVERLAY_HEALTH_URL, 1):
-            return
-
-        project_root = Path(__file__).resolve().parents[1]
-        creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-        self.overlay_process = subprocess.Popen(
-            [sys.executable, "-m", "overlay.server"],
-            cwd=str(project_root),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            creationflags=creation_flags,
-        )
-        self.overlay_started_here = True
-
         for _ in range(30):
             if self.stop_requested:
                 raise RuntimeError("Inicio cancelado.")
             if self.check_url(OVERLAY_HEALTH_URL, 1):
                 return
-            if self.overlay_process is not None and self.overlay_process.poll() is not None:
-                raise RuntimeError("El overlay se cerró durante el inicio.")
             time.sleep(0.2)
-
-        raise RuntimeError("El overlay no respondió.")
+        raise RuntimeError("El servidor local del overlay no respondió.")
 
     @staticmethod
     def check_url(url: str, timeout: float) -> bool:
@@ -279,6 +264,10 @@ class AppController(QObject):
         self.worker: PandaWorker | None = None
         self.current_username = ""
         self.voice_manager = VoiceManager()
+        self.overlay_access_token = secrets.token_urlsafe(32)
+        self.overlay_process: subprocess.Popen | None = None
+        self.start_overlay_server()
+        self.cloudflare_tunnel = CloudflareTunnel(self.overlay_access_token)
 
         settings = self.read_settings()
         raw_dashboard = settings.get("dashboard", {})
@@ -343,6 +332,19 @@ class AppController(QObject):
         self.worker.error_occurred.connect(self.handle_worker_error)
         self.worker.finished.connect(self.handle_worker_finished)
         self.worker.start()
+
+    def start_overlay_server(self) -> None:
+        if PandaWorker.check_url(OVERLAY_HEALTH_URL, 0.5): return
+        project_root = Path(__file__).resolve().parents[1]
+        environment = os.environ.copy(); environment["PANDAIA_OVERLAY_ACCESS_TOKEN"] = self.overlay_access_token
+        flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+        try:
+            self.overlay_process = subprocess.Popen(
+                [sys.executable, "-m", "overlay.server"], cwd=str(project_root), env=environment,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags,
+            )
+        except OSError as error:
+            self.log_message.emit(f"No se pudo iniciar el servidor local del overlay: {error}")
 
     @Slot(str, str)
     def forward_spotify_status(self, _state: str, message: str) -> None:
@@ -570,8 +572,13 @@ class AppController(QObject):
         write_settings_atomic(CONFIG_FILE, settings)
 
     def shutdown(self) -> None:
+        self.cloudflare_tunnel.stop()
         self.live_watchdog.shutdown()
         self.spotify_runtime.stop()
         if self.worker is not None:
             self.worker.request_stop()
             self.worker.wait(5000)
+        if self.overlay_process is not None and self.overlay_process.poll() is None:
+            self.overlay_process.terminate()
+            try: self.overlay_process.wait(timeout=3)
+            except subprocess.TimeoutExpired: self.overlay_process.kill(); self.overlay_process.wait(timeout=2)

@@ -14,6 +14,7 @@ let pollingEnabled = true;
 const overlayClientId = sessionStorage.getItem("pandaia-overlay-client-id") ||
     (window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : `overlay-${Date.now()}-${Math.random()}`);
 sessionStorage.setItem("pandaia-overlay-client-id", overlayClientId);
+const overlayAccessToken = new URLSearchParams(window.location.search).get("access") || "";
 
 
 function sleep(milliseconds) {
@@ -50,6 +51,10 @@ function getEventImageUrl(event) {
             value.startsWith("/") ||
             value.startsWith("data:image/")
         ) {
+            if (value.startsWith("/gift-assets/") && overlayAccessToken) {
+                const separator = value.includes("?") ? "&" : "?";
+                return `${value}${separator}access=${encodeURIComponent(overlayAccessToken)}`;
+            }
             return value;
         }
     }
@@ -203,7 +208,7 @@ async function requestNextEvent() {
 
     try {
         const response = await fetch(
-            `/api/events/next?client_id=${encodeURIComponent(overlayClientId)}`,
+            `/api/events/next?client_id=${encodeURIComponent(overlayClientId)}${overlayAccessToken ? `&access=${encodeURIComponent(overlayAccessToken)}` : ""}`,
             {
                 method: "GET",
                 cache: "no-store",

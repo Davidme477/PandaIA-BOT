@@ -60,7 +60,7 @@ class MainWindow(QMainWindow):
 
         self.dashboard_view = DashboardView()
         self.tiktok_view = TikTokView()
-        self.gifts_view = GiftsView(self.controller.spotify_runtime)
+        self.gifts_view = GiftsView(self.controller.spotify_runtime, self.controller.cloudflare_tunnel)
         self.settings_view = SettingsView(self.controller.watchdog_settings)
 
         self.pages.setObjectName("contentStack")

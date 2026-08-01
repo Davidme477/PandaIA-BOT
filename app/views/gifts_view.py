@@ -6,7 +6,7 @@ import webbrowser
 from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QScrollArea, QSpinBox, QTabWidget, QTableWidget, QInputDialog,
+    QPushButton, QScrollArea, QSpinBox, QTabWidget, QTableWidget, QInputDialog, QMessageBox,
     QTableWidgetItem, QVBoxLayout, QWidget, QApplication,
 )
 
@@ -19,6 +19,7 @@ from services.spotify.oauth import SCOPES, SpotifyAuthError, SpotifyOAuthPKCE
 from services.spotify.runtime import SpotifyRuntime
 from services.spotify.models import RequestStatus
 from app.widgets.responsive_grid import ResponsiveGrid
+from services.overlay.cloudflare_tunnel import CloudflareTunnel, INSTALL_COMMAND
 
 
 class SpotifyAuthWorker(QThread):
@@ -42,9 +43,10 @@ class SpotifyAuthWorker(QThread):
 class GiftsView(QScrollArea):
     settings_changed = Signal(object)
 
-    def __init__(self, runtime: SpotifyRuntime) -> None:
+    def __init__(self, runtime: SpotifyRuntime, tunnel: CloudflareTunnel | None = None) -> None:
         super().__init__()
         self.runtime = runtime
+        self.tunnel = tunnel
         self.store = runtime.store
         self.auth_worker: SpotifyAuthWorker | None = None
         self._loading = True
@@ -194,6 +196,14 @@ class GiftsView(QScrollArea):
         self.overlay_test_status = QLabel(""); self.overlay_test_status.setObjectName("helperText"); self.overlay_test_status.setWordWrap(True)
         layout.addWidget(self.overlay_state); layout.addWidget(self.overlay_url)
         layout.addWidget(self.responsive_group((copy, preview), wide=2)); layout.addWidget(info); layout.addWidget(self.overlay_test_status)
+        secure_title = QLabel("Enlace directo para TikTok Live Studio"); secure_title.setObjectName("panelTitle")
+        self.tunnel_state = QLabel("Túnel desconectado"); self.tunnel_state.setObjectName("statusRed")
+        self.public_overlay_url = QLineEdit(); self.public_overlay_url.setReadOnly(True); self.public_overlay_url.setPlaceholderText("Crea un enlace HTTPS temporal")
+        self.create_tunnel = QPushButton("Crear enlace HTTPS"); self.copy_tunnel = QPushButton("Copiar enlace"); self.stop_tunnel = QPushButton("Detener enlace")
+        self.copy_tunnel.setEnabled(False); self.stop_tunnel.setEnabled(False)
+        keep_open = QLabel("Mantén PandaIA abierta mientras utilizas este enlace"); keep_open.setObjectName("helperText"); keep_open.setWordWrap(True)
+        layout.addWidget(secure_title); layout.addWidget(self.tunnel_state); layout.addWidget(self.public_overlay_url)
+        layout.addWidget(self.responsive_group((self.create_tunnel, self.copy_tunnel, self.stop_tunnel), wide=3, medium=1)); layout.addWidget(keep_open)
         return self._tab_scroll(panel)
 
     def _connect(self) -> None:
@@ -210,6 +220,29 @@ class GiftsView(QScrollArea):
                        self.only_connected, self.announce_tts): widget.toggled.connect(self.save_settings)
         for widget in (self.command,): widget.editingFinished.connect(self.save_settings)
         for widget in (self.max_pending, self.max_user, self.cooldown): widget.valueChanged.connect(self.save_settings)
+        self.create_tunnel.clicked.connect(self.create_https_tunnel)
+        self.copy_tunnel.clicked.connect(lambda: QApplication.clipboard().setText(self.public_overlay_url.text()))
+        self.stop_tunnel.clicked.connect(lambda: self.tunnel.stop() if self.tunnel else None)
+        if self.tunnel is not None: self.tunnel.state_changed.connect(self.apply_tunnel_state)
+
+    def create_https_tunnel(self) -> None:
+        if self.tunnel is not None: self.tunnel.start()
+
+    def apply_tunnel_state(self, state: str, public_url: str, detail: str) -> None:
+        self.tunnel_state.setText(state); active = state == "Enlace HTTPS activo"
+        self.tunnel_state.setObjectName("statusGreen" if active else "statusRed"); self.tunnel_state.style().unpolish(self.tunnel_state); self.tunnel_state.style().polish(self.tunnel_state)
+        if public_url: self.public_overlay_url.setText(public_url)
+        elif state in {"Túnel desconectado", "Error"}: self.public_overlay_url.clear()
+        self.copy_tunnel.setEnabled(active); self.stop_tunnel.setEnabled(active or state == "Creando enlace seguro")
+        if detail: self.overlay_test_status.setText(detail)
+        if state == "Componente no instalado": self.show_cloudflared_required()
+
+    def show_cloudflared_required(self) -> None:
+        dialog = QMessageBox(self); dialog.setWindowTitle("Se necesita Cloudflare Tunnel")
+        dialog.setText("Se necesita Cloudflare Tunnel"); dialog.setInformativeText("Instálalo con Windows Package Manager y vuelve a crear el enlace.")
+        copy_button = dialog.addButton("Copiar comando", QMessageBox.ButtonRole.ActionRole); dialog.addButton(QMessageBox.StandardButton.Close)
+        dialog.exec()
+        if dialog.clickedButton() is copy_button: QApplication.clipboard().setText(INSTALL_COMMAND)
 
     def load_values(self) -> None:
         local = self.store.load(); self.client_id.setText(str(local.get("client_id", "")))
