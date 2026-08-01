@@ -181,21 +181,17 @@ class GiftsView(QScrollArea):
 
     def _overlay_tab(self) -> QWidget:
         panel, layout = self.panel("Overlay para OBS / TikTok Live Studio")
-        self.overlay_state = QLabel("URL local del overlay existente")
+        self.overlay_state = QLabel("Este overlay muestra exclusivamente regalos y animaciones de TikTok.")
+        self.overlay_state.setWordWrap(True)
         self.overlay_url = QLineEdit(OVERLAY_URL); self.overlay_url.setReadOnly(True)
         copy = QPushButton("Copiar URL"); preview = QPushButton("Abrir vista previa")
         copy.setObjectName("primaryButton"); preview.setObjectName("voiceSecondaryButton")
         copy.clicked.connect(lambda: QApplication.clipboard().setText(OVERLAY_URL))
         preview.clicked.connect(lambda: webbrowser.open(OVERLAY_URL))
-        self.show_animations = QCheckBox("Mostrar animaciones")
-        self.show_current = QCheckBox("Mostrar canción actual")
-        self.show_next = QCheckBox("Mostrar próxima canción")
-        self.show_requester = QCheckBox("Mostrar nombre del solicitante")
         info = QLabel("Fuente de navegador: 1080×1920, fondo transparente. El audio permanece en Spotify/OBS.")
         info.setWordWrap(True); info.setObjectName("helperText")
         layout.addWidget(self.overlay_state); layout.addWidget(self.overlay_url)
         layout.addWidget(self.responsive_group((copy, preview), wide=2)); layout.addWidget(info)
-        for widget in (self.show_animations, self.show_current, self.show_next, self.show_requester): layout.addWidget(widget)
         return self._tab_scroll(panel)
 
     def _connect(self) -> None:
@@ -209,8 +205,7 @@ class GiftsView(QScrollArea):
         self.runtime.queue_changed.connect(self.set_queue); self.runtime.playback_changed.connect(self.set_playback)
         self.runtime.spotify_queue_changed.connect(self.set_spotify_queue)
         for widget in (self.animations_enabled, self.requests_enabled, self.allow_explicit, self.block_duplicates,
-                       self.only_connected, self.announce_tts, self.show_animations, self.show_current,
-                       self.show_next, self.show_requester): widget.toggled.connect(self.save_settings)
+                       self.only_connected, self.announce_tts): widget.toggled.connect(self.save_settings)
         for widget in (self.command,): widget.editingFinished.connect(self.save_settings)
         for widget in (self.max_pending, self.max_user, self.cooldown): widget.valueChanged.connect(self.save_settings)
 
@@ -224,9 +219,6 @@ class GiftsView(QScrollArea):
         self.max_user.setValue(int(values.get("max_per_user", 2))); self.cooldown.setValue(int(values.get("user_cooldown", 120)))
         self.allow_explicit.setChecked(bool(values.get("allow_explicit", False))); self.block_duplicates.setChecked(bool(values.get("block_duplicates", True)))
         self.only_connected.setChecked(bool(values.get("only_when_tiktok_connected", True))); self.announce_tts.setChecked(bool(values.get("announce_tts", False)))
-        overlay = values.get("overlay", {}) if isinstance(values.get("overlay"), dict) else {}
-        self.show_animations.setChecked(bool(overlay.get("show_animations", True))); self.show_current.setChecked(bool(overlay.get("show_current", True)))
-        self.show_next.setChecked(bool(overlay.get("show_next", True))); self.show_requester.setChecked(bool(overlay.get("show_requester", True)))
         self.load_assignments()
         self.set_spotify_state(self.spotify_state.text(), self.spotify_message.text())
 
@@ -238,15 +230,12 @@ class GiftsView(QScrollArea):
                 "command": self.command.text().strip() or "a/", "max_pending": self.max_pending.value(), "max_per_user": self.max_user.value(),
                 "user_cooldown": self.cooldown.value(), "allow_explicit": self.allow_explicit.isChecked(),
                 "block_duplicates": self.block_duplicates.isChecked(), "only_when_tiktok_connected": self.only_connected.isChecked(),
-                "announce_tts": self.announce_tts.isChecked(), "assignments": self.settings.get("assignments", {}),
-                "overlay": {"show_animations": self.show_animations.isChecked(), "show_current": self.show_current.isChecked(),
-                            "show_next": self.show_next.isChecked(), "show_requester": self.show_requester.isChecked()}}
+                "announce_tts": self.announce_tts.isChecked(), "assignments": self.settings.get("assignments", {})}
 
     def save_settings(self, *_args) -> None:
         if self._loading:
             return
         self.settings.update(self.values()); self.settings_changed.emit(self.values())
-        post_overlay_event({"type": "visibility", **self.values()["overlay"]})
 
     def save_client_id(self) -> None:
         self.store.save_client_id(self.client_id.text()); self.set_spotify_state("Desconectado", "ID guardado únicamente en este PC.")

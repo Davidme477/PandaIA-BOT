@@ -18,7 +18,6 @@ class SpotifyRuntime(QObject):
     queue_changed = Signal(object)
     playback_changed = Signal(object)
     spotify_queue_changed = Signal(object)
-    overlay_event = Signal(object)
 
     def __init__(self, settings: dict[str, object] | None = None, client: SpotifyClient | None = None,
                  announce_callback=None) -> None:
@@ -95,10 +94,6 @@ class SpotifyRuntime(QObject):
                     continue
                 request = self.requests.add(username, track)
                 self.queue_changed.emit(self.requests.snapshot())
-                self.overlay_event.emit({
-                    "type": "music_request", "title": track.title, "artist": track.artist,
-                    "username": username, "request_id": request.request_id,
-                })
                 if bool(self.settings.get("announce_tts")) and self.announce_callback is not None:
                     self.announce_callback(f"Solicitud aceptada: {track.title}, de {track.artist}")
             except (SpotifyAPIError, ValueError) as error:
@@ -141,11 +136,6 @@ class SpotifyRuntime(QObject):
                     self.prepared_for_uri = uri
                 elif remaining > 30000 and self.prepared_for_uri != uri:
                     self.prepared_for_uri = ""
-                self.overlay_event.emit({
-                    "type": "playback", "title": item.get("name", ""),
-                    "artist": ", ".join(a.get("name", "") for a in item.get("artists", [])),
-                    "duration_ms": item.get("duration_ms", 0),
-                })
         except SpotifyAPIError as error:
             if error.status == 429:
                 self.last_poll = time.monotonic() + max(1, error.retry_after)

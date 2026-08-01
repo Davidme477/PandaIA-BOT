@@ -8,7 +8,7 @@ from urllib.request import Request, urlopen
 
 OVERLAY_URL = "http://127.0.0.1:5050/overlay"
 OVERLAY_EVENTS_URL = "http://127.0.0.1:5050/api/events"
-ALLOWED_TYPES = {"gift", "music_request", "playback", "visibility"}
+ALLOWED_TYPES = {"gift"}
 
 
 def sanitize_text(value: object, limit: int = 160) -> str:
@@ -21,13 +21,13 @@ def sanitize_event(payload: dict[str, object]) -> dict[str, object]:
     if event_type not in ALLOWED_TYPES:
         raise ValueError("Tipo de evento de overlay no admitido.")
     clean: dict[str, object] = {"type": event_type}
-    for key in ("gift_id", "gift_name", "username", "animation", "title", "artist", "request_id"):
+    for key in ("gift_id", "gift_name", "username", "animation"):
         if key in payload:
             clean[key] = sanitize_text(payload[key])
     for key in ("quantity", "duration_ms"):
         if key in payload:
             clean[key] = max(0, int(payload[key]))
-    for key in ("test", "show_animations", "show_current", "show_next", "show_requester"):
+    for key in ("test",):
         if key in payload:
             clean[key] = bool(payload[key])
     if "image_url" in payload:

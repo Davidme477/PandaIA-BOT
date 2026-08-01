@@ -8,14 +8,9 @@ const giftSender = document.getElementById("gift-sender");
 const giftName = document.getElementById("gift-name");
 const flashEffect = document.getElementById("flash-effect");
 const ambientLight = document.getElementById("ambient-light");
-const musicModule = document.getElementById("music-module");
-const musicTitle = document.getElementById("music-title");
-const musicArtist = document.getElementById("music-artist");
-const musicRequester = document.getElementById("music-requester");
 
 let animationRunning = false;
 let pollingEnabled = true;
-let visibility = {show_animations: true, show_current: true, show_next: true, show_requester: true};
 
 
 function sleep(milliseconds) {
@@ -167,21 +162,7 @@ async function playEvent(event) {
         return;
     }
 
-    if (event.type === "music_request" || event.type === "playback") {
-        if ((event.type === "music_request" && !visibility.show_next) || (event.type === "playback" && !visibility.show_current)) return;
-        musicTitle.textContent = String(event.title || "");
-        musicArtist.textContent = String(event.artist || "");
-        musicRequester.textContent = visibility.show_requester && event.username ? `Solicitada por @${String(event.username).replace(/^@/, "")}` : "";
-        musicModule.setAttribute("aria-hidden", "false");
-        return;
-    }
-    if (event.type === "visibility") {
-        visibility = {...visibility, ...event};
-        musicModule.hidden = !visibility.show_current && !visibility.show_next;
-        return;
-    }
     if (event.type !== "gift") return;
-    if (!visibility.show_animations) return;
     if (event.duration_ms) document.documentElement.style.setProperty("--animation-duration", `${Number(event.duration_ms)}ms`);
     animationRunning = true;
 

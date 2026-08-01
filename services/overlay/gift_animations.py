@@ -9,7 +9,6 @@ from services.overlay.events import post_overlay_event
 GIFT_DEFAULTS: dict[str, object] = {
     "animations_enabled": True,
     "assignments": {},
-    "overlay": {"show_animations": True, "show_current": True, "show_next": True, "show_requester": True},
 }
 
 

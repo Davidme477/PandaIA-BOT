@@ -23,7 +23,6 @@ from services.tts.voice_manager import VoiceManager
 from services.ollama.personalities import dashboard_defaults
 from services.spotify.runtime import SpotifyRuntime
 from services.overlay.gift_animations import GIFT_DEFAULTS, GiftAnimationManager
-from services.overlay.events import post_overlay_event
 from services.live.command_router import CommandRouter
 from services.spotify.request_queue import spotify_defaults
 from services.live_watchdog.runtime import LiveWatchdog, WATCHDOG_DEFAULTS
@@ -294,7 +293,6 @@ class AppController(QObject):
         self.spotify_runtime.state_changed.connect(self.forward_spotify_status)
         self.spotify_runtime.announce_callback = self.announce_music_request
         self.gift_animations = GiftAnimationManager(self.gifts_settings)
-        self.spotify_runtime.overlay_event.connect(post_overlay_event)
         raw_watchdog = settings.get("live_watchdog", {})
         self.watchdog_settings = {**WATCHDOG_DEFAULTS, **(raw_watchdog if isinstance(raw_watchdog, dict) else {})}
         self.live_watchdog = LiveWatchdog(self.watchdog_settings)

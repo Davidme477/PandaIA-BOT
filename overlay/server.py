@@ -62,7 +62,10 @@ def next_event():
     overlay lo solicita.
     """
     with queue_lock:
-        event = event_queue.popleft() if event_queue else None
+        gift_events = deque(item for item in event_queue if item.get("type") == "gift")
+        event_queue.clear()
+        event = gift_events.popleft() if gift_events else None
+        event_queue.extend(gift_events)
         remaining_events = len(event_queue)
 
     return jsonify(
@@ -117,14 +120,7 @@ def add_event():
         )
 
     if event_type != "gift":
-        try:
-            event = sanitize_event(payload)
-        except (TypeError, ValueError):
-            return jsonify({"ok": False, "error": "Evento no admitido."}), 400
-        with queue_lock:
-            event_queue.append(event)
-            queue_position = len(event_queue)
-        return jsonify({"ok": True, "queue_position": queue_position, "event": event})
+        return jsonify({"ok": False, "error": "El overlay acepta exclusivamente eventos gift."}), 400
 
     gift_id = str(
         payload.get("gift_id", "")

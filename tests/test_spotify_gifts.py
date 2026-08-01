@@ -155,16 +155,43 @@ class SpotifyGiftTests(unittest.TestCase):
         manager.update_settings({"animations_enabled": False})
         self.assertFalse(manager.handle_gift(gift_id="5655", gift_name="Rose", quantity=1, username="ana"))
 
-    def test_overlay_sanitization_url_and_music_endpoint(self):
+    def test_overlay_accepts_only_gifts_without_music_using_queue_space(self):
         self.assertEqual(OVERLAY_URL, "http://127.0.0.1:5050/overlay")
         self.assertNotIn("<", sanitize_text("<script>alert(1)</script>"))
-        clean = sanitize_event({"type": "music_request", "title": "<b>Tema</b>", "access_token": "secret"})
-        self.assertNotIn("access_token", clean); self.assertNotIn("<", clean["title"])
+        with self.assertRaises(ValueError): sanitize_event({"type": "music_request", "title": "Tema"})
         with queue_lock: event_queue.clear()
-        response = app.test_client().post("/api/events", json={"type": "music_request", "title": "Tema", "artist": "Artista", "username": "ana"})
-        self.assertEqual(response.status_code, 200)
+        with queue_lock: event_queue.append({"type": "gift", "gift_id": "1", "gift_name": "Rose"})
+        for event_type in ("music_request", "playback"):
+            response = app.test_client().post("/api/events", json={"type": event_type, "title": "Tema", "username": "ana"})
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.get_json()["ok"], False)
         event = app.test_client().get("/api/events/next").get_json()["event"]
-        self.assertEqual(event["title"], "Tema")
+        self.assertEqual(event["type"], "gift")
+        self.assertIsNone(app.test_client().get("/api/events/next").get_json()["event"])
+
+    def test_accidental_music_in_queue_is_discarded_before_gift(self):
+        with queue_lock:
+            event_queue.clear(); event_queue.append({"type": "music_request", "title": "No mostrar"})
+            event_queue.append({"type": "gift", "gift_id": "2", "gift_name": "TikTok"})
+        payload = app.test_client().get("/api/events/next").get_json()
+        self.assertEqual(payload["event"]["type"], "gift"); self.assertEqual(payload["remaining_events"], 0)
+
+    def test_overlay_template_is_transparent_and_has_no_music_module(self):
+        html = app.test_client().get("/overlay").get_data(as_text=True)
+        css = (PROJECT_DIR / "overlay/static/css/overlay.css").read_text(encoding="utf-8")
+        self.assertNotIn("music-module", html); self.assertIn("background: transparent", css)
+
+    def test_gift_and_test_gift_reach_overlay(self):
+        from unittest.mock import patch
+        cached = Path("cache/gifts/rose.png")
+        with patch("overlay.server.get_gift_image", return_value=cached), patch(
+            "overlay.server.get_overlay_image_url", return_value="/gift-assets/rose.png"
+        ):
+            with queue_lock: event_queue.clear()
+            response = app.test_client().post("/api/events", json={"type":"gift","gift_id":"1","gift_name":"Rose","quantity":2})
+            self.assertEqual(response.status_code, 200); self.assertEqual(app.test_client().get("/api/events/next").get_json()["event"]["type"], "gift")
+            response = app.test_client().post("/api/test/gift", json={"gift_id":"1","gift_name":"Rose"})
+            self.assertEqual(response.status_code, 200); self.assertEqual(app.test_client().get("/api/events/next").get_json()["event"]["type"], "gift")
 
     def test_spotify_local_file_is_ignored(self):
         ignore = (PROJECT_DIR / ".gitignore").read_text(encoding="utf-8")
