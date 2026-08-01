@@ -66,7 +66,7 @@ class MainWindow(QMainWindow):
             self.placeholder("IA & Personalidad", "Configura la IA desde el Panel Principal."),
             self.placeholder("Voces (TTS)", "Administra la voz desde el Panel Principal."),
             self.placeholder("Memoria", "El monitor de memoria está disponible en el Panel Principal."),
-            self.placeholder("Comandos", "La gestión de comandos estará disponible aquí."),
+            self.placeholder("Comandos", "/mensaje → conversar con PandaIA.\na/artista canción → solicitar música."),
             self.gifts_view,
             self.placeholder("Configuración", "Configuración general de PandaIA BOT."),
             self.placeholder("Registros (Logs)", "Los registros de la sesión aparecerán aquí."),

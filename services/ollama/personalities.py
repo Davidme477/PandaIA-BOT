@@ -74,6 +74,8 @@ def dashboard_defaults(settings: Mapping[str, object] | None = None) -> dict[str
         "custom_personality_name": "Mi personalidad",
         "custom_personality_prompt": "",
         "respond_comments": True,
+        "command_only_mode": True,
+        "chat_command": "/",
         "read_gifts": True,
         "use_memory": True,
         "automatic_responses": True,

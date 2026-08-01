@@ -11,6 +11,7 @@ from services.live.session_memory import MemoryCallback, SessionMemory
 from services.ollama.ollama_service import OllamaService
 from services.ollama.personalities import build_system_prompt
 from services.tts.voice_manager import VoiceManager
+from services.live.command_router import CommandRouter
 
 
 AUTONOMOUS_IDLE_SECONDS = 90.0
@@ -24,6 +25,7 @@ class ResponseRequest:
     text: str = ""
     gift_name: str = ""
     quantity: int = 1
+    command: bool = False
 
 
 class CommentResponseQueue:
@@ -94,9 +96,27 @@ class CommentResponseQueue:
             if clean:
                 self._log("Respuestas a comentarios desactivadas.")
             return False
+        dashboard, _tts = self.controls.snapshot()
+        router = CommandRouter(chat_command=str(dashboard.get("chat_command", "/")))
+        route = router.route(clean)
+        if route.kind in {"music", "empty_music"}:
+            return False
+        if bool(dashboard.get("command_only_mode", True)):
+            if route.kind != "chat":
+                if route.kind == "empty_chat": self._log("Comando de conversación vacío.")
+                return False
+            return self.enqueue_routed_comment(username, route.text)
         if not self.controls.enabled("automatic_responses") and not self._is_directed(clean):
             return False
         return self._put(ResponseRequest("comment", username.strip() or "usuario", clean))
+
+    def enqueue_routed_comment(self, username: str, text: str) -> bool:
+        self.note_activity()
+        clean = text.strip()
+        if not clean or not self.controls.enabled("respond_comments"):
+            if clean: self._log("Respuestas a comentarios desactivadas.")
+            return False
+        return self._put(ResponseRequest("comment", username.strip() or "usuario", clean, command=True))
 
     def enqueue_gift(
         self, username: str, gift_name: str, quantity: int, *, streaking: bool = False
@@ -163,6 +183,7 @@ class CommentResponseQueue:
             return
         if (
             request.kind == "comment"
+            and not request.command
             and not bool(dashboard.get("automatic_responses", True))
             and not self._is_directed(request.text)
         ):

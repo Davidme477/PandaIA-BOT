@@ -135,7 +135,7 @@ class GiftsView(QScrollArea):
             label.setWordWrap(True); layout.addWidget(label)
         controls, controls_layout = self.panel("Controles de solicitudes")
         self.requests_enabled = QCheckBox("Activar solicitudes musicales")
-        self.command = QLineEdit("M"); self.command.setMaxLength(3)
+        self.command = QLineEdit("a/"); self.command.setMaxLength(8)
         self.max_pending = QSpinBox(); self.max_pending.setRange(1, 100)
         self.max_user = QSpinBox(); self.max_user.setRange(1, 20)
         self.cooldown = QSpinBox(); self.cooldown.setRange(0, 3600); self.cooldown.setSuffix(" s")
@@ -144,12 +144,14 @@ class GiftsView(QScrollArea):
         self.only_connected = QCheckBox("Aceptar solo con TikTok conectado")
         self.announce_tts = QCheckBox("Anunciar solicitudes mediante TTS")
         form = QGridLayout(); form.addWidget(self.requests_enabled, 0, 0, 1, 2)
-        for row, (name, widget) in enumerate((("Comando", self.command), ("Máximo pendiente", self.max_pending),
+        for row, (name, widget) in enumerate((("Comando musical", self.command), ("Máximo pendiente", self.max_pending),
                 ("Máximo por usuario", self.max_user), ("Espera por usuario", self.cooldown)), start=1):
             form.addWidget(QLabel(name), row, 0); form.addWidget(widget, row, 1)
         for widget in (self.allow_explicit, self.block_duplicates, self.only_connected, self.announce_tts):
             form.addWidget(widget, form.rowCount(), 0, 1, 2)
         controls_layout.addLayout(form); layout.addWidget(controls)
+        examples = QLabel("Ejemplos: a/Carlos Rivera Si me muero  ·  a/ Carlos Rivera Si me muero")
+        examples.setObjectName("helperText"); examples.setWordWrap(True); controls_layout.addWidget(examples)
         queue_panel, queue_layout = self.panel("Cola musical interna")
         self.queue_table = QTableWidget(0, 6); self.queue_table.setHorizontalHeaderLabels(
             ["Posición", "Título", "Artista", "Usuario", "Duración", "Estado"])
@@ -218,7 +220,7 @@ class GiftsView(QScrollArea):
         values = self.settings
         self.animations_enabled.setChecked(bool(values.get("animations_enabled", True)))
         self.requests_enabled.setChecked(bool(values.get("requests_enabled", False)))
-        self.command.setText(str(values.get("command", "M"))); self.max_pending.setValue(int(values.get("max_pending", 20)))
+        self.command.setText(str(values.get("command", "a/"))); self.max_pending.setValue(int(values.get("max_pending", 20)))
         self.max_user.setValue(int(values.get("max_per_user", 2))); self.cooldown.setValue(int(values.get("user_cooldown", 120)))
         self.allow_explicit.setChecked(bool(values.get("allow_explicit", False))); self.block_duplicates.setChecked(bool(values.get("block_duplicates", True)))
         self.only_connected.setChecked(bool(values.get("only_when_tiktok_connected", True))); self.announce_tts.setChecked(bool(values.get("announce_tts", False)))
@@ -233,7 +235,7 @@ class GiftsView(QScrollArea):
 
     def values(self) -> dict[str, object]:
         return {"animations_enabled": self.animations_enabled.isChecked(), "requests_enabled": self.requests_enabled.isChecked(),
-                "command": self.command.text().strip() or "M", "max_pending": self.max_pending.value(), "max_per_user": self.max_user.value(),
+                "command": self.command.text().strip() or "a/", "max_pending": self.max_pending.value(), "max_per_user": self.max_user.value(),
                 "user_cooldown": self.cooldown.value(), "allow_explicit": self.allow_explicit.isChecked(),
                 "block_duplicates": self.block_duplicates.isChecked(), "only_when_tiktok_connected": self.only_connected.isChecked(),
                 "announce_tts": self.announce_tts.isChecked(), "assignments": self.settings.get("assignments", {}),

@@ -190,14 +190,14 @@ class DashboardView(QScrollArea):
             ("respond_comments", "Responder a comentarios"),
             ("read_gifts", "Leer regalos en voz alta"),
             ("use_memory", "Usar memoria"),
-            ("automatic_responses", "Respuestas automáticas"),
+            ("command_only_mode", "Responder solo con comando /"),
             ("autonomous_mode", "Modo IA Autónomo"),
         ]
         tooltips = {
             "respond_comments": "Permite que PandaIA responda comentarios del live.",
             "read_gifts": "Agradece los regalos reales usando IA y voz.",
             "use_memory": "Recuerda el contexto reciente de cada usuario durante este live.",
-            "automatic_responses": "Responde a todos los comentarios; desactivado, solo menciones y preguntas.",
+            "command_only_mode": "Activado: solo /mensaje inicia una conversación con PandaIA.",
             "autonomous_mode": "Permite intervenciones breves después de un periodo sin actividad.",
         }
         for key, text in controls:

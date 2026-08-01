@@ -9,7 +9,7 @@ from PySide6.QtCore import QObject, Signal
 from services.spotify.client import SpotifyAPIError, SpotifyClient
 from services.spotify.local_store import SpotifyLocalStore
 from services.spotify.models import RequestStatus
-from services.spotify.request_queue import DEFAULTS, MusicRequestQueue, music_query
+from services.spotify.request_queue import MusicRequestQueue, music_query, spotify_defaults
 
 
 class SpotifyRuntime(QObject):
@@ -23,7 +23,7 @@ class SpotifyRuntime(QObject):
     def __init__(self, settings: dict[str, object] | None = None, client: SpotifyClient | None = None,
                  announce_callback=None) -> None:
         super().__init__()
-        self.settings = {**DEFAULTS, **(settings or {})}
+        self.settings = spotify_defaults(dict(settings or {}))
         self.store = SpotifyLocalStore()
         self.client = client or SpotifyClient(self.store)
         self.requests = MusicRequestQueue(self.settings)
@@ -37,7 +37,7 @@ class SpotifyRuntime(QObject):
         self.thread.start()
 
     def submit_comment(self, username: str, comment: str) -> bool:
-        query = music_query(comment, str(self.settings.get("command", "M")))
+        query = music_query(comment, str(self.settings.get("command", "a/")))
         if query is None:
             return False
         if not bool(self.settings.get("requests_enabled")):
@@ -48,6 +48,18 @@ class SpotifyRuntime(QObject):
             return True
         self.jobs.put((username, query))
         return True
+
+    def submit_query(self, username: str, query: str) -> bool:
+        if not bool(self.settings.get("requests_enabled")):
+            self.state_changed.emit("Desconectado", "Solicitud musical ignorada: solicitudes desactivadas.")
+            return True
+        if not self.store.load().get("access_token"):
+            self.state_changed.emit("Cuenta no autorizada", "Solicitud musical rechazada: Spotify está desconectado.")
+            return True
+        if bool(self.settings.get("only_when_tiktok_connected")) and not self.connected_tiktok:
+            self.state_changed.emit("Desconectado", "Solicitud musical rechazada: TikTok no está conectado.")
+            return True
+        self.jobs.put((username, query)); return True
 
     def submit_local_request(self, query: str) -> bool:
         query = query.strip()

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 import threading
 import time
 import uuid
@@ -10,24 +9,29 @@ from services.spotify.models import MusicRequest, RequestStatus, Track, utc_now
 
 
 DEFAULTS: dict[str, object] = {
-    "requests_enabled": False, "command": "M", "max_pending": 20,
+    "requests_enabled": False, "command": "a/", "max_pending": 20,
     "max_per_user": 2, "user_cooldown": 120, "allow_explicit": False,
     "block_duplicates": True, "only_when_tiktok_connected": True,
     "announce_tts": False,
 }
 
 
-def music_query(comment: str, command: str = "M") -> str | None:
-    match = re.fullmatch(rf"\s*{re.escape(command)}\s+(.+?)\s*", comment, re.IGNORECASE)
-    if not match:
-        return None
-    query = match.group(1).strip()
-    return query if len(query) >= 3 else None
+def spotify_defaults(settings: dict[str, object] | None = None) -> dict[str, object]:
+    source = dict(settings or {})
+    if str(source.get("command", "")).strip().casefold() in {"", "m"}:
+        source["command"] = "a/"
+    return {**DEFAULTS, **source}
+
+
+def music_query(comment: str, command: str = "a/") -> str | None:
+    from services.live.command_router import CommandRouter
+    route = CommandRouter(music_command=command).route(comment)
+    return route.text if route.kind == "music" else None
 
 
 class MusicRequestQueue:
     def __init__(self, settings: dict[str, object] | None = None, clock=time.monotonic) -> None:
-        self.settings = {**DEFAULTS, **(settings or {})}
+        self.settings = spotify_defaults(settings)
         self.clock = clock
         self.lock = threading.RLock()
         self.items: list[MusicRequest] = []

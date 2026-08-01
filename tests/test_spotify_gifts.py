@@ -61,19 +61,19 @@ class SpotifyGiftTests(unittest.TestCase):
         return Track(uri, "Si me muero", "Carlos Rivera", 201000, explicit)
 
     def test_music_command_parser_is_strict(self):
-        self.assertEqual(music_query("M Carlos Rivera Si me muero"), "Carlos Rivera Si me muero")
-        self.assertEqual(music_query("m canción"), "canción")
-        for value in ("Musica bonita", "Música", "M", "M  x", "am canción"):
+        self.assertEqual(music_query("a/Carlos Rivera Si me muero"), "Carlos Rivera Si me muero")
+        self.assertEqual(music_query("A / canción"), "canción")
+        for value in ("a Carlos", "amo esta canción", "a/", "a /", "am canción"):
             self.assertIsNone(music_query(value), value)
 
     def test_music_command_is_consumed_before_ollama(self):
-        worker = PandaWorker("u", {}, {}, music_callback=lambda _u, text: text.startswith("M "))
+        worker = PandaWorker("u", {"command_only_mode": True}, {}, {"command": "a/"}, music_callback=lambda _u, _text: True)
         called = []
         worker.response_queue.enqueue = lambda *args: called.append(args)
-        worker.forward_comment("ana", "M artista canción")
+        worker.forward_comment("ana", "a/artista canción")
         self.assertEqual(called, [])
         worker.forward_comment("ana", "mensaje normal")
-        self.assertEqual(called, [("ana", "mensaje normal")])
+        self.assertEqual(called, [])
         worker.response_queue.stop()
 
     def test_queue_limits_cooldown_duplicates_explicit_and_capacity(self):
@@ -101,7 +101,7 @@ class SpotifyGiftTests(unittest.TestCase):
     def test_search_without_results_is_rejected(self):
         runtime = SpotifyRuntime({"requests_enabled": True, "only_when_tiktok_connected": False}, FakeSpotify(None))
         messages = []; runtime.state_changed.connect(lambda state, message: messages.append((state, message)))
-        self.assertTrue(runtime.submit_comment("ana", "M canción inexistente"))
+        self.assertTrue(runtime.submit_comment("ana", "a/canción inexistente"))
         deadline = time.time() + 2
         while not messages and time.time() < deadline: self.app.processEvents(); time.sleep(.01)
         runtime.stop(); self.assertIn("No se encontró", messages[0][1])

@@ -23,6 +23,8 @@ from services.ollama.personalities import dashboard_defaults
 from services.spotify.runtime import SpotifyRuntime
 from services.overlay.gift_animations import GIFT_DEFAULTS, GiftAnimationManager
 from services.overlay.events import post_overlay_event
+from services.live.command_router import CommandRouter
+from services.spotify.request_queue import spotify_defaults
 
 OVERLAY_HEALTH_URL = "http://127.0.0.1:5050/health"
 OLLAMA_TAGS_URL = "http://127.0.0.1:11434/api/tags"
@@ -42,6 +44,7 @@ class PandaWorker(QThread):
         username: str,
         dashboard_settings: dict[str, object],
         tts_settings: dict[str, object],
+        gifts_settings: dict[str, object] | None = None,
         music_callback=None,
         gift_animation_callback=None,
     ) -> None:
@@ -61,6 +64,11 @@ class PandaWorker(QThread):
         )
         self.music_callback = music_callback
         self.gift_animation_callback = gift_animation_callback
+        self.command_router = CommandRouter(
+            chat_command=str(dashboard_settings.get("chat_command", "/")),
+            music_command=str((gifts_settings or {}).get("command", "a/")),
+        )
+        self._last_ignored_log = 0.0
 
     def run(self) -> None:
         try:
@@ -161,9 +169,25 @@ class PandaWorker(QThread):
         self.activity_received.emit(icon, title, user, amount)
 
     def forward_comment(self, username: str, comment: str) -> None:
-        if self.music_callback is not None and self.music_callback(username, comment):
+        route = self.command_router.route(comment)
+        if route.kind == "music":
+            self.forward_log("Solicitud musical detectada.")
+            if self.music_callback is not None: self.music_callback(username, route.text)
             return
-        self.response_queue.enqueue(username, comment)
+        if route.kind == "chat":
+            self.forward_log("Comando de conversación detectado.")
+            self.response_queue.enqueue_routed_comment(username, route.text)
+            return
+        if route.kind in {"empty_music", "empty_chat"}:
+            self.forward_log("Comando vacío ignorado.")
+            return
+        dashboard, _tts = self.response_queue.controls.snapshot()
+        if not bool(dashboard.get("command_only_mode", True)):
+            self.response_queue.enqueue_comment(username, comment)
+            return
+        if time.monotonic() - self._last_ignored_log >= 15:
+            self.forward_log("Comentario ignorado por no tener comando.")
+            self._last_ignored_log = time.monotonic()
 
     def forward_gift(self, username: str, gift_name: str, quantity: int) -> None:
         self.response_queue.enqueue_gift(username, gift_name, quantity)
@@ -178,6 +202,10 @@ class PandaWorker(QThread):
 
     def update_setting(self, key: str, value: object) -> None:
         self.response_queue.update_setting(key, value)
+        if key == "chat_command": self.command_router.update(chat_command=str(value))
+
+    def update_music_command(self, value: object) -> None:
+        self.command_router.update(music_command=str(value))
 
     def update_tts_settings(self, values: dict[str, object]) -> None:
         self.response_queue.controls.update_tts(values)
@@ -259,7 +287,9 @@ class AppController(QObject):
         self.tts_settings = self.normalize_tts(settings.get("tts", {}))
         raw_gifts = settings.get("gifts", {})
         self.gifts_settings = {**GIFT_DEFAULTS, **(raw_gifts if isinstance(raw_gifts, dict) else {})}
+        self.gifts_settings = spotify_defaults(self.gifts_settings)
         self.spotify_runtime = SpotifyRuntime(self.gifts_settings)
+        self.spotify_runtime.state_changed.connect(self.forward_spotify_status)
         self.spotify_runtime.announce_callback = self.announce_music_request
         self.gift_animations = GiftAnimationManager(self.gifts_settings)
         self.spotify_runtime.overlay_event.connect(post_overlay_event)
@@ -297,7 +327,8 @@ class AppController(QObject):
             username,
             dict(self.dashboard_settings),
             dict(self.tts_settings),
-            music_callback=self.spotify_runtime.submit_comment,
+            dict(self.gifts_settings),
+            music_callback=self.spotify_runtime.submit_query,
             gift_animation_callback=self.gift_animations.handle_gift,
         )
         self.worker.status_changed.connect(self.handle_worker_status)
@@ -308,6 +339,10 @@ class AppController(QObject):
         self.worker.error_occurred.connect(self.handle_worker_error)
         self.worker.finished.connect(self.handle_worker_finished)
         self.worker.start()
+
+    @Slot(str, str)
+    def forward_spotify_status(self, _state: str, message: str) -> None:
+        self.log_message.emit(message)
 
     @Slot()
     def disconnect_all(self) -> None:
@@ -338,7 +373,7 @@ class AppController(QObject):
             "respond_comments": "Responder a comentarios",
             "read_gifts": "Leer regalos en voz alta",
             "use_memory": "Usar memoria",
-            "automatic_responses": "Respuestas automáticas",
+            "command_only_mode": "Responder solo con comando /",
             "autonomous_mode": "Modo IA autónomo",
         }
         name = setting_names.get(key, key)
@@ -474,6 +509,7 @@ class AppController(QObject):
         self.gifts_settings.update(values)
         self.spotify_runtime.update_settings(values)
         self.gift_animations.update_settings(values)
+        if self.worker is not None: self.worker.update_music_command(values.get("command", "a/"))
         settings = self.read_settings()
         settings["gifts"] = self.gifts_settings
         self.write_settings(settings)

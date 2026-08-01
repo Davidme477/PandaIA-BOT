@@ -50,6 +50,7 @@ class BotControlsTests(unittest.TestCase):
             "read_gifts": True,
             "use_memory": True,
             "automatic_responses": True,
+            "command_only_mode": False,
             "autonomous_mode": False,
         }
         dashboard.update(settings)

@@ -72,6 +72,7 @@ class CommentResponseQueueTests(unittest.TestCase):
                 "model": "modelo-live",
                 "personality": "Entusiasta",
                 "language": "Español",
+                "command_only_mode": False,
             },
             tts_settings={
                 "engine": "windows",
