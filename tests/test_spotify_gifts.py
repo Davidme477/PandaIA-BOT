@@ -28,6 +28,7 @@ from overlay.server import app, client_cursors, enqueue_gift, event_queue, queue
 from services.overlay.events import OVERLAY_URL, sanitize_event, sanitize_text
 from services.overlay.gift_animations import GiftAnimationManager
 from services.spotify.client import SpotifyAPIError, SpotifyClient
+from services.spotify.credential_store import MemoryCredentialStore
 from services.spotify.local_store import SpotifyLocalStore
 from services.spotify.models import RequestStatus, Track
 from services.spotify.oauth import code_challenge, generate_code_verifier, refresh_access_token, validate_state
@@ -100,6 +101,7 @@ class SpotifyGiftTests(unittest.TestCase):
 
     def test_search_without_results_is_rejected(self):
         runtime = SpotifyRuntime({"requests_enabled": True, "only_when_tiktok_connected": False}, FakeSpotify(None))
+        runtime.spotify_ready = True
         messages = []; runtime.state_changed.connect(lambda state, message: messages.append((state, message)))
         self.assertTrue(runtime.submit_comment("ana", "a/canción inexistente"))
         deadline = time.time() + 2
@@ -113,7 +115,9 @@ class SpotifyGiftTests(unittest.TestCase):
 
     def test_refresh_token_and_atomic_private_store(self):
         with tempfile.TemporaryDirectory() as directory:
-            store = SpotifyLocalStore(Path(directory) / "spotify_local.json")
+            store = SpotifyLocalStore(
+                Path(directory) / "spotify_local.json", MemoryCredentialStore()
+            )
             store.save({"client_id": "id", "access_token": "secret", "refresh_token": "refresh", "ignored": "x"})
             self.assertNotIn("ignored", store.load())
             refreshed = refresh_access_token("id", "refresh", opener=lambda *_a, **_k: Response({"access_token": "new", "expires_in": 3600}))
@@ -122,7 +126,7 @@ class SpotifyGiftTests(unittest.TestCase):
 
     def test_http_errors_are_sanitized_and_cover_statuses(self):
         with tempfile.TemporaryDirectory() as directory:
-            store = SpotifyLocalStore(Path(directory) / "local.json")
+            store = SpotifyLocalStore(Path(directory) / "local.json", MemoryCredentialStore())
             store.save({"client_id": "client-secret-value", "access_token": "token-secret-value", "expires_at": time.time() + 1000})
             for status in (401, 403, 404, 429):
                 headers = Message(); headers["Retry-After"] = "3"
@@ -212,7 +216,7 @@ class SpotifyGiftTests(unittest.TestCase):
     def test_real_spotify_queue_endpoint_and_origin_mapping(self):
         captured = []
         with tempfile.TemporaryDirectory() as directory:
-            store = SpotifyLocalStore(Path(directory) / "local.json")
+            store = SpotifyLocalStore(Path(directory) / "local.json", MemoryCredentialStore())
             store.save({"access_token": "token", "expires_at": time.time() + 1000})
             def opener(request, **_kwargs):
                 captured.append(request.full_url)

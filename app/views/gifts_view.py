@@ -26,13 +26,14 @@ class SpotifyAuthWorker(QThread):
     authorized = Signal(object)
     failed = Signal(str)
 
-    def __init__(self, client_id: str) -> None:
+    def __init__(self, client_id: str, *, show_dialog: bool = False) -> None:
         super().__init__()
         self.oauth = SpotifyOAuthPKCE(client_id)
+        self.show_dialog = show_dialog
 
     def run(self) -> None:
         try:
-            self.authorized.emit(self.oauth.authorize())
+            self.authorized.emit(self.oauth.authorize(show_dialog=self.show_dialog))
         except SpotifyAuthError as error:
             self.failed.emit(str(error))
 
@@ -207,7 +208,7 @@ class GiftsView(QScrollArea):
         return self._tab_scroll(panel)
 
     def _connect(self) -> None:
-        self.save_client.clicked.connect(self.save_client_id); self.connect_spotify.clicked.connect(self.start_authorization)
+        self.save_client.clicked.connect(self.save_client_id); self.connect_spotify.clicked.connect(self.handle_spotify_button)
         self.disconnect_spotify.clicked.connect(self.runtime.disconnect); self.refresh_device.clicked.connect(lambda: self.runtime.request_action("refresh"))
         self.clear_queue.clicked.connect(self.clear_pending); self.remove_request.clicked.connect(self.remove_selected)
         self.skip_track.clicked.connect(lambda: self._playback_action("next")); self.pause_track.clicked.connect(lambda: self._playback_action("pause"))
@@ -246,7 +247,10 @@ class GiftsView(QScrollArea):
 
     def load_values(self) -> None:
         local = self.store.load(); self.client_id.setText(str(local.get("client_id", "")))
-        if local.get("access_token"): self.spotify_state.setText("Desconectado"); self.runtime.request_action("refresh")
+        if self.store.has_authorization():
+            self.spotify_state.setText("Reconectando Spotify…")
+            self.spotify_message.setText("Renovando la autorización guardada.")
+            self.runtime.reconnect()
         values = self.settings
         self.animations_enabled.setChecked(bool(values.get("animations_enabled", True)))
         self.requests_enabled.setChecked(bool(values.get("requests_enabled", False)))
@@ -282,21 +286,47 @@ class GiftsView(QScrollArea):
         if not client_id: self.set_spotify_state("No configurado", "Introduce el ID de cliente."); return
         self.store.save_client_id(client_id); self.set_spotify_state("Autorizando", "Completa la autorización en el navegador.")
         self.connect_spotify.setText("Cancelar autorización")
-        self.auth_worker = SpotifyAuthWorker(client_id); self.auth_worker.authorized.connect(self.authorization_done)
+        changing_account = self.runtime.spotify_ready
+        self.auth_worker = SpotifyAuthWorker(client_id, show_dialog=changing_account)
+        self.auth_worker.authorized.connect(self.authorization_done)
         self.auth_worker.failed.connect(lambda message: self.set_spotify_state("Cuenta no autorizada", message))
         self.auth_worker.finished.connect(self.authorization_finished); self.auth_worker.start()
 
+    def handle_spotify_button(self) -> None:
+        if self.spotify_state.text() == "Spotify sin conexión" and self.store.has_authorization():
+            self.runtime.reconnect()
+            return
+        self.start_authorization()
+
     def authorization_done(self, tokens: dict[str, object]) -> None:
-        tokens = dict(tokens); tokens["expires_at"] = time.time() + int(tokens.get("expires_in", 3600)); tokens["scopes"] = SCOPES.split()
-        self.store.save(tokens); self.runtime.request_action("refresh")
+        tokens = dict(tokens)
+        granted = set(str(tokens.get("scope", SCOPES)).split())
+        required = set(SCOPES.split())
+        if not required.issubset(granted):
+            self.store.clear_tokens()
+            self.set_spotify_state(
+                "Cuenta no autorizada", "Faltan permisos obligatorios. Vuelve a conectar Spotify."
+            )
+            return
+        tokens["expires_at"] = time.time() + int(tokens.get("expires_in", 3600))
+        tokens["scopes"] = sorted(granted)
+        self.store.save_authorization(tokens)
+        self.runtime.reconnect()
 
     def authorization_finished(self) -> None:
-        self.connect_spotify.setText("Conectar Spotify"); self.auth_worker = None
+        self.auth_worker = None
+        self.set_spotify_state(self.spotify_state.text(), self.spotify_message.text())
 
     def set_spotify_state(self, state: str, message: str) -> None:
         self.spotify_state.setText(state); self.spotify_message.setText(message)
         authorized = state in {"Conectado", "Sin dispositivo activo"}
         connected = state == "Conectado"
+        self.connect_spotify.setText(
+            "Cambiar cuenta" if authorized or state == "Premium requerido" else "Reconectar"
+            if state == "Cuenta no autorizada" else "Conectar Spotify"
+        )
+        if state == "Spotify sin conexión":
+            self.connect_spotify.setText("Reintentar")
         self.connect_spotify.setEnabled(True)
         self.disconnect_spotify.setEnabled(state != "No configurado")
         self.refresh_device.setEnabled(authorized); self.add_test_request.setEnabled(authorized)
@@ -306,8 +336,6 @@ class GiftsView(QScrollArea):
         self.account_label.setText(f"Cuenta: {data.get('name', '—')}")
         device = data.get("device") if isinstance(data.get("device"), dict) else {}
         self.device_label.setText(f"Dispositivo activo: {device.get('name', '—')}")
-        if data:
-            self.store.save({"account_id": data.get("id", ""), "account_name": data.get("name", "")})
 
     def set_playback(self, data: dict[str, object]) -> None:
         item = data.get("item") if isinstance(data.get("item"), dict) else {}

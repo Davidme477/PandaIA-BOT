@@ -12,6 +12,14 @@ from services.spotify.models import RequestStatus
 from services.spotify.request_queue import MusicRequestQueue, music_query, spotify_defaults
 
 
+class _TransientStore:
+    def __init__(self) -> None: self.values: dict[str, object] = {}
+    def load(self) -> dict[str, object]: return dict(self.values)
+    def save(self, values: dict[str, object]) -> None: self.values.update(values)
+    def has_authorization(self) -> bool: return False
+    def clear_tokens(self) -> None: self.values.clear()
+
+
 class SpotifyRuntime(QObject):
     state_changed = Signal(str, str)
     account_changed = Signal(object)
@@ -23,8 +31,13 @@ class SpotifyRuntime(QObject):
                  announce_callback=None) -> None:
         super().__init__()
         self.settings = spotify_defaults(dict(settings or {}))
-        self.store = SpotifyLocalStore()
-        self.client = client or SpotifyClient(self.store)
+        if client is None:
+            self.store = SpotifyLocalStore()
+            self.client = SpotifyClient(self.store)
+        else:
+            self.client = client
+            client_store = getattr(client, "store", None)
+            self.store = client_store if client_store is not None else _TransientStore()
         self.requests = MusicRequestQueue(self.settings)
         self.announce_callback = announce_callback
         self.connected_tiktok = False
@@ -33,6 +46,9 @@ class SpotifyRuntime(QObject):
         self.thread = threading.Thread(target=self._run, name="PandaIA-Spotify", daemon=True)
         self.last_poll = 0.0
         self.prepared_for_uri = ""
+        self.spotify_ready = False
+        self._reconnect_lock = threading.Lock()
+        self._reconnect_pending = False
         self.thread.start()
 
     def submit_comment(self, username: str, comment: str) -> bool:
@@ -41,6 +57,9 @@ class SpotifyRuntime(QObject):
             return False
         if not bool(self.settings.get("requests_enabled")):
             self.state_changed.emit("Desconectado", "Las solicitudes musicales están desactivadas.")
+            return True
+        if not self.spotify_ready:
+            self.state_changed.emit("Cuenta no autorizada", "Spotify todavía no está conectado.")
             return True
         if bool(self.settings.get("only_when_tiktok_connected")) and not self.connected_tiktok:
             self.state_changed.emit("Desconectado", "Las solicitudes solo se aceptan durante el live.")
@@ -52,7 +71,7 @@ class SpotifyRuntime(QObject):
         if not bool(self.settings.get("requests_enabled")):
             self.state_changed.emit("Desconectado", "Solicitud musical ignorada: solicitudes desactivadas.")
             return True
-        if not self.store.load().get("access_token"):
+        if not self.spotify_ready:
             self.state_changed.emit("Cuenta no autorizada", "Solicitud musical rechazada: Spotify está desconectado.")
             return True
         if bool(self.settings.get("only_when_tiktok_connected")) and not self.connected_tiktok:
@@ -102,18 +121,39 @@ class SpotifyRuntime(QObject):
     def request_action(self, action: str) -> None:
         self.jobs.put(("__action__", action))
 
+    def reconnect(self) -> bool:
+        if not self.store.has_authorization():
+            self.state_changed.emit(
+                "Cuenta no autorizada",
+                "La autorización venció o fue revocada. Vuelve a conectar Spotify.",
+            )
+            return False
+        with self._reconnect_lock:
+            if self._reconnect_pending:
+                return False
+            self._reconnect_pending = True
+        self.state_changed.emit("Reconectando Spotify…", "Renovando la autorización guardada.")
+        self.jobs.put(("__action__", "reconnect"))
+        return True
+
     def _perform_action(self, action: str) -> None:
         try:
-            if action == "refresh":
+            if action == "reconnect":
+                self.refresh(self.client.reconnect())
+            elif action == "refresh":
                 self.refresh()
             elif action in {"next", "pause", "resume"}:
                 getattr(self.client, action)()
                 self.refresh()
         except SpotifyAPIError as error:
-            self.state_changed.emit("Error de Spotify", str(error))
+            self._publish_connection_error(error)
+        finally:
+            if action == "reconnect":
+                with self._reconnect_lock:
+                    self._reconnect_pending = False
 
     def _monitor_if_due(self) -> None:
-        if time.monotonic() - self.last_poll < 8 or not self.store.load().get("access_token"):
+        if time.monotonic() - self.last_poll < 8 or not self.spotify_ready:
             return
         self.last_poll = time.monotonic()
         try:
@@ -157,23 +197,50 @@ class SpotifyRuntime(QObject):
         self.queue_changed.emit(self.requests.snapshot())
         return True
 
-    def refresh(self) -> None:
+    def refresh(self, data: dict[str, object] | None = None) -> None:
         try:
-            data = self.client.account_and_device()
+            data = data or self.client.account_and_device()
             account, device = data["account"], data["device"]
+            self.spotify_ready = True
+            self.store.save({"account_id": account.get("id", "")})
             self.account_changed.emit({
                 "name": account.get("display_name") or account.get("id", ""),
                 "id": account.get("id", ""), "device": device,
             })
             if device is None:
-                self.state_changed.emit("Sin dispositivo activo", "Abre Spotify y reproduce una canción para activar el dispositivo.")
+                self.state_changed.emit(
+                    "Sin dispositivo activo", "Spotify conectado, pero sin dispositivo activo."
+                )
             else:
-                self.state_changed.emit("Conectado", "Spotify Premium conectado.")
-            self.playback_changed.emit(self.client.playback())
-            self._publish_spotify_queue(self.client.playback_queue())
+                self.state_changed.emit("Conectado", "Spotify conectado.")
+            try:
+                self.playback_changed.emit(self.client.playback())
+                self._publish_spotify_queue(self.client.playback_queue())
+            except SpotifyAPIError as playback_error:
+                if playback_error.status != 404:
+                    raise
+                self.playback_changed.emit({})
+                self.spotify_queue_changed.emit([])
         except SpotifyAPIError as error:
-            state = "Premium requerido" if error.status == 403 else "Cuenta no autorizada" if error.status == 401 else "Error de Spotify"
-            self.state_changed.emit(state, str(error))
+            self._publish_connection_error(error)
+
+    def _publish_connection_error(self, error: SpotifyAPIError) -> None:
+        self.spotify_ready = False
+        if error.status == 403:
+            self.state_changed.emit(
+                "Premium requerido", "La cuenta conectada no dispone de Spotify Premium."
+            )
+        elif error.status == 401:
+            message = str(error)
+            if "permisos" not in message.casefold():
+                message = "La autorización venció o fue revocada. Vuelve a conectar Spotify."
+            self.state_changed.emit(
+                "Cuenta no autorizada", message,
+            )
+        else:
+            self.state_changed.emit(
+                "Spotify sin conexión", "Spotify no está disponible temporalmente."
+            )
 
     def _publish_spotify_queue(self, data: dict[str, object]) -> None:
         requested = {item.track.uri: item.username for item in self.requests.snapshot()}
@@ -194,8 +261,13 @@ class SpotifyRuntime(QObject):
 
     def disconnect(self) -> None:
         self.store.clear_tokens()
+        self.spotify_ready = False
+        self.requests = MusicRequestQueue(self.settings)
         self.state_changed.emit("Desconectado", "Cuenta local desconectada.")
         self.account_changed.emit({})
+        self.queue_changed.emit([])
+        self.spotify_queue_changed.emit([])
+        self.playback_changed.emit({})
 
     def stop(self) -> None:
         self.stop_event.set()

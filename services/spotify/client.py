@@ -8,7 +8,7 @@ from urllib.request import Request, urlopen
 
 from services.spotify.local_store import SpotifyLocalStore
 from services.spotify.models import Track
-from services.spotify.oauth import SpotifyAuthError, refresh_access_token
+from services.spotify.oauth import SCOPES, SpotifyAuthError, refresh_access_token
 
 
 class SpotifyAPIError(RuntimeError):
@@ -25,24 +25,47 @@ class SpotifyClient:
         self.store = store or SpotifyLocalStore()
         self.opener = opener
 
-    def _credentials(self) -> dict[str, object]:
+    def _credentials(self, *, force_refresh: bool = False) -> dict[str, object]:
         values = self.store.load()
-        if not values.get("access_token"):
-            raise SpotifyAPIError("Cuenta de Spotify no autorizada.", status=401)
-        if float(values.get("expires_at", 0) or 0) <= time.time() + 30:
+        if not values.get("refresh_token") and not values.get("access_token"):
+            raise SpotifyAPIError(
+                "La autorización venció o fue revocada. Vuelve a conectar Spotify.", status=401
+            )
+        if force_refresh or not values.get("access_token") or float(values.get("expires_at", 0) or 0) <= time.time() + 30:
             try:
                 refreshed = refresh_access_token(
                     str(values.get("client_id", "")), str(values.get("refresh_token", "")), self.opener
                 )
-            except SpotifyAuthError:
-                self.store.clear_tokens()
-                raise SpotifyAPIError("La autorización caducó. Reconecta Spotify.", status=401) from None
+            except SpotifyAuthError as error:
+                if error.permanent:
+                    self.store.clear_tokens()
+                    raise SpotifyAPIError(
+                        "La autorización venció o fue revocada. Vuelve a conectar Spotify.", status=401
+                    ) from None
+                raise SpotifyAPIError("Spotify no está disponible temporalmente.") from None
             values.update(refreshed)
             values["expires_at"] = time.time() + int(refreshed.get("expires_in", 3600))
             self.store.save(values)
         return values
 
-    def request(self, method: str, path: str, data: object | None = None) -> object:
+    def reconnect(self) -> dict[str, object]:
+        values = self.store.load()
+        granted_value = values.get("scopes", [])
+        granted = set(
+            granted_value.split() if isinstance(granted_value, str) else granted_value
+            if isinstance(granted_value, list) else []
+        )
+        if granted and not set(SCOPES.split()).issubset(granted):
+            self.store.clear_tokens()
+            raise SpotifyAPIError(
+                "Faltan permisos obligatorios. Vuelve a conectar Spotify.", status=401
+            )
+        self._credentials(force_refresh=True)
+        return self.account_and_device()
+
+    def request(
+        self, method: str, path: str, data: object | None = None, *, retry_auth: bool = True
+    ) -> object:
         token = str(self._credentials()["access_token"])
         body = json.dumps(data).encode("utf-8") if data is not None else None
         request = Request(self.API + path, data=body, method=method, headers={
@@ -53,6 +76,12 @@ class SpotifyClient:
                 raw = response.read()
                 return json.loads(raw.decode("utf-8")) if raw else {}
         except HTTPError as error:
+            if error.code == 401 and retry_auth and self.store.load().get("refresh_token"):
+                try:
+                    self._credentials(force_refresh=True)
+                except SpotifyAPIError:
+                    raise
+                return self.request(method, path, data, retry_auth=False)
             retry = int(error.headers.get("Retry-After", "0") or 0)
             messages = {401: "Cuenta no autorizada.", 403: "Spotify Premium requerido o acción no autorizada.",
                         404: "No hay un dispositivo Spotify activo.", 429: "Spotify limitó temporalmente las solicitudes."}

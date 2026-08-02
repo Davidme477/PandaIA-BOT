@@ -21,7 +21,9 @@ SCOPES = (
 
 
 class SpotifyAuthError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, permanent: bool = False) -> None:
+        super().__init__(message)
+        self.permanent = permanent
 
 
 def generate_code_verifier() -> str:
@@ -43,7 +45,9 @@ def validate_state(expected: str, received: str) -> bool:
 
 def _safe_error(status: int | None = None) -> SpotifyAuthError:
     suffix = f" (HTTP {status})" if status else ""
-    return SpotifyAuthError(f"Spotify rechazó la autorización{suffix}. Reconecta la cuenta.")
+    return SpotifyAuthError(
+        f"Spotify rechazó la autorización{suffix}. Reconecta la cuenta.", permanent=True
+    )
 
 
 def token_request(values: dict[str, str], opener=urlopen) -> dict[str, object]:
@@ -59,7 +63,7 @@ def token_request(values: dict[str, str], opener=urlopen) -> dict[str, object]:
     except HTTPError as error:
         raise _safe_error(error.code) from None
     except (URLError, TimeoutError, OSError, ValueError):
-        raise SpotifyAuthError("No se pudo completar la conexión segura con Spotify.") from None
+        raise SpotifyAuthError("Spotify no está disponible temporalmente.") from None
     if not isinstance(result, dict) or not result.get("access_token"):
         raise _safe_error()
     return result
@@ -86,7 +90,7 @@ class SpotifyOAuthPKCE:
             except Exception:
                 pass
 
-    def authorize(self, timeout: float = 180.0) -> dict[str, object]:
+    def authorize(self, timeout: float = 180.0, *, show_dialog: bool = False) -> dict[str, object]:
         if not self.client_id:
             raise SpotifyAuthError("Configura primero el ID de cliente.")
         verifier, state = generate_code_verifier(), generate_state()
@@ -117,7 +121,7 @@ class SpotifyOAuthPKCE:
         authorization_url = "https://accounts.spotify.com/authorize?" + urlencode({
             "client_id": self.client_id, "response_type": "code", "redirect_uri": REDIRECT_URI,
             "scope": SCOPES, "state": state, "code_challenge_method": "S256",
-            "code_challenge": code_challenge(verifier),
+            "code_challenge": code_challenge(verifier), "show_dialog": "true" if show_dialog else "false",
         })
         webbrowser.open(authorization_url)
         deadline = time.monotonic() + timeout
