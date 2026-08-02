@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QTextEdit, QVBoxLayout, QWidget,
 )
 
-from services.tts.voice_manager import VoiceManager
+from services.tts.voice_manager import VoiceManager, get_voice_manager
 
 
 DEFAULT_TEXT = "Hola, soy PandaIA. Gracias por acompañarme en este directo."
@@ -17,8 +17,9 @@ class VoicePreviewWorker(QThread):
     preview_ready = Signal(str)
     preview_failed = Signal(str)
 
-    def __init__(self, *, engine: str, text: str, voice: str, speed: float, volume: float) -> None:
+    def __init__(self, *, manager: VoiceManager, engine: str, text: str, voice: str, speed: float, volume: float) -> None:
         super().__init__()
+        self.manager = manager
         self.engine = engine
         self.text = text
         self.voice = voice
@@ -27,7 +28,7 @@ class VoicePreviewWorker(QThread):
 
     def run(self) -> None:
         try:
-            result = VoiceManager().preview(
+            result = self.manager.preview(
                 engine=self.engine,
                 text=self.text,
                 voice=self.voice,
@@ -47,6 +48,7 @@ class VoiceDialog(QDialog):
         current_voice: str = "ef_dora",
         current_speed: float = 1.0,
         current_volume: float = 1.0,
+        manager: VoiceManager | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -57,7 +59,7 @@ class VoiceDialog(QDialog):
         self.setMinimumSize(520, 500)
         self._set_screen_safe_initial_size(680, 700)
 
-        self.manager = VoiceManager()
+        self.manager = manager or get_voice_manager()
         self.worker: VoicePreviewWorker | None = None
 
         self.engine_combo = QComboBox()
@@ -305,6 +307,7 @@ class VoiceDialog(QDialog):
         self.set_busy(True)
         self.status_label.setText("Generando y reproduciendo la vista previa...")
         self.worker = VoicePreviewWorker(
+            manager=self.manager,
             engine=self.selected_engine(),
             text=text,
             voice=self.selected_voice_code(),

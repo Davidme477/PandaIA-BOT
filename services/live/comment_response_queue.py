@@ -11,7 +11,7 @@ from services.live.runtime_controls import RuntimeControls
 from services.live.session_memory import MemoryCallback, SessionMemory
 from services.ollama.ollama_service import OllamaService
 from services.ollama.personalities import build_system_prompt
-from services.tts.voice_manager import VoiceManager
+from services.tts.voice_manager import VoiceManager, get_voice_manager
 from services.live.command_router import CommandRouter
 from services.ollama.response_length import ResponseLength, finalize_ollama_response
 
@@ -52,7 +52,7 @@ class CommentResponseQueue:
             self.memory.set_callback(memory_callback)
         self.log_callback = log_callback
         self.ollama = ollama or OllamaService(logger=self._log)
-        self.voice_manager = voice_manager or VoiceManager()
+        self.voice_manager = voice_manager or get_voice_manager()
         self.autonomous_interval = autonomous_interval
         self._items: Queue[ResponseRequest] = Queue()
         self._stopped = Event()
@@ -62,7 +62,6 @@ class CommentResponseQueue:
         self._connected = False
         self._last_activity = monotonic()
         self._autonomous_sent = False
-        self._warmup_lock = Lock()
         self.memory.set_enabled(self.controls.enabled("use_memory"))
 
     def start(self) -> None:
@@ -81,7 +80,6 @@ class CommentResponseQueue:
         self.memory.set_connected(connected)
         if connected:
             self.start()
-            self.warmup_async()
 
     def update_setting(self, key: str, value: object) -> None:
         self.controls.update_dashboard(key, value)
@@ -89,26 +87,6 @@ class CommentResponseQueue:
             self.memory.set_enabled(bool(value))
         if key == "autonomous_mode" and not bool(value):
             self._remove_kind("autonomous")
-        if key in {"model", "respond_comments", "autonomous_mode"} and bool(value):
-            self.warmup_async()
-
-    def warmup_async(self) -> None:
-        dashboard, _tts = self.controls.snapshot()
-        model = str(dashboard.get("model", "")).strip()
-        warmup = getattr(self.ollama, "warmup", None)
-        if not model or not callable(warmup) or not self._warmup_lock.acquire(blocking=False):
-            return
-
-        def run() -> None:
-            try:
-                warmup(model)
-            except Exception as error:
-                self._log(f"Calentamiento de Ollama falló: modelo={model}, error={error}")
-            finally:
-                self._warmup_lock.release()
-
-        Thread(target=run, name="pandaia-ollama-warmup", daemon=True).start()
-
     def enqueue(self, username: str, comment: str) -> bool:
         return self.enqueue_comment(username, comment)
 

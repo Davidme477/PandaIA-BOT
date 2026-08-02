@@ -43,13 +43,25 @@ class SpotifyRuntime(QObject):
         self.connected_tiktok = False
         self.jobs: queue.Queue[tuple[str, str] | None] = queue.Queue()
         self.stop_event = threading.Event()
-        self.thread = threading.Thread(target=self._run, name="PandaIA-Spotify", daemon=True)
+        self.thread: threading.Thread | None = None
+        self._thread_lock = threading.Lock()
         self.last_poll = 0.0
         self.prepared_for_uri = ""
         self.spotify_ready = False
         self._reconnect_lock = threading.Lock()
         self._reconnect_pending = False
-        self.thread.start()
+
+    def _ensure_thread(self) -> None:
+        with self._thread_lock:
+            if self.thread is not None and self.thread.is_alive():
+                return
+            self.stop_event.clear()
+            self.jobs = queue.Queue()
+            self.thread = threading.Thread(target=self._run, name="PandaIA-Spotify", daemon=True)
+            self.thread.start()
+
+    def is_running(self) -> bool:
+        return self.thread is not None and self.thread.is_alive()
 
     def submit_comment(self, username: str, comment: str) -> bool:
         query = music_query(comment, str(self.settings.get("command", "a/")))
@@ -64,6 +76,7 @@ class SpotifyRuntime(QObject):
         if bool(self.settings.get("only_when_tiktok_connected")) and not self.connected_tiktok:
             self.state_changed.emit("Desconectado", "Las solicitudes solo se aceptan durante el live.")
             return True
+        self._ensure_thread()
         self.jobs.put((username, query))
         return True
 
@@ -77,6 +90,7 @@ class SpotifyRuntime(QObject):
         if bool(self.settings.get("only_when_tiktok_connected")) and not self.connected_tiktok:
             self.state_changed.emit("Desconectado", "Solicitud musical rechazada: TikTok no está conectado.")
             return True
+        self._ensure_thread()
         self.jobs.put((username, query)); return True
 
     def submit_local_request(self, query: str) -> bool:
@@ -84,7 +98,7 @@ class SpotifyRuntime(QObject):
         if len(query) < 3:
             self.state_changed.emit("Error de Spotify", "Escribe artista y canción para la prueba local.")
             return False
-        self.jobs.put(("Prueba local", query)); return True
+        self._ensure_thread(); self.jobs.put(("Prueba local", query)); return True
 
     def set_tiktok_connected(self, connected: bool) -> None:
         self.connected_tiktok = connected
@@ -119,6 +133,7 @@ class SpotifyRuntime(QObject):
                 self.state_changed.emit("Error de Spotify", str(error))
 
     def request_action(self, action: str) -> None:
+        self._ensure_thread()
         self.jobs.put(("__action__", action))
 
     def reconnect(self) -> bool:
@@ -132,6 +147,7 @@ class SpotifyRuntime(QObject):
             if self._reconnect_pending:
                 return False
             self._reconnect_pending = True
+        self._ensure_thread()
         self.state_changed.emit("Reconectando Spotify…", "Renovando la autorización guardada.")
         self.jobs.put(("__action__", "reconnect"))
         return True
@@ -271,5 +287,8 @@ class SpotifyRuntime(QObject):
 
     def stop(self) -> None:
         self.stop_event.set()
+        thread = self.thread
+        if thread is None:
+            return
         self.jobs.put(None)
-        self.thread.join(timeout=3)
+        thread.join(timeout=6)

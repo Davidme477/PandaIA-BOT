@@ -21,9 +21,10 @@ class SpotifyAPIError(RuntimeError):
 class SpotifyClient:
     API = "https://api.spotify.com/v1"
 
-    def __init__(self, store: SpotifyLocalStore | None = None, opener=urlopen) -> None:
+    def __init__(self, store: SpotifyLocalStore | None = None, opener=urlopen, timeout: float = 5.0) -> None:
         self.store = store or SpotifyLocalStore()
         self.opener = opener
+        self.timeout = timeout
 
     def _credentials(self, *, force_refresh: bool = False) -> dict[str, object]:
         values = self.store.load()
@@ -34,7 +35,8 @@ class SpotifyClient:
         if force_refresh or not values.get("access_token") or float(values.get("expires_at", 0) or 0) <= time.time() + 30:
             try:
                 refreshed = refresh_access_token(
-                    str(values.get("client_id", "")), str(values.get("refresh_token", "")), self.opener
+                    str(values.get("client_id", "")), str(values.get("refresh_token", "")),
+                    self.opener, self.timeout,
                 )
             except SpotifyAuthError as error:
                 if error.permanent:
@@ -72,7 +74,7 @@ class SpotifyClient:
             "Authorization": f"Bearer {token}", "Content-Type": "application/json",
         })
         try:
-            with self.opener(request, timeout=15) as response:
+            with self.opener(request, timeout=self.timeout) as response:
                 raw = response.read()
                 return json.loads(raw.decode("utf-8")) if raw else {}
         except HTTPError as error:

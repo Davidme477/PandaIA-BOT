@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from threading import Lock, RLock
 
 from services.tts.base_engine import EngineOption, TTSEngine, TTSEngineError, VoiceOption
 
@@ -8,6 +9,7 @@ from services.tts.base_engine import EngineOption, TTSEngine, TTSEngineError, Vo
 class VoiceManager:
     def __init__(self, engines: Iterable[TTSEngine] | None = None) -> None:
         self._engines: dict[str, TTSEngine] = {}
+        self._speech_lock = RLock()
         if engines is None:
             engines = self._default_engines()
         for engine in engines:
@@ -56,17 +58,39 @@ class VoiceManager:
     def preview(
         self, *, engine: str, text: str, voice: str, speed: float, volume: float
     ) -> str:
-        return self.get_engine(engine, require_available=True).preview(
-            text=text, voice=voice, speed=speed, volume=volume
-        )
+        with self._speech_lock:
+            return self.get_engine(engine, require_available=True).preview(
+                text=text, voice=voice, speed=speed, volume=volume
+            )
 
     def speak(
         self, *, engine: str, text: str, voice: str, speed: float, volume: float
     ) -> None:
-        self.get_engine(engine, require_available=True).speak(
-            text=text, voice=voice, speed=speed, volume=volume
-        )
+        with self._speech_lock:
+            self.get_engine(engine, require_available=True).speak(
+                text=text, voice=voice, speed=speed, volume=volume
+            )
 
     @staticmethod
     def _normalize(engine: str) -> str:
         return engine.strip().lower()
+
+
+_shared_manager: VoiceManager | None = None
+_shared_manager_lock = Lock()
+
+
+def get_voice_manager() -> VoiceManager:
+    """Devuelve el único registro TTS compartido por la aplicación."""
+    global _shared_manager
+    with _shared_manager_lock:
+        if _shared_manager is None:
+            _shared_manager = VoiceManager()
+        return _shared_manager
+
+
+def reset_shared_voice_manager() -> None:
+    """Aísla pruebas; la aplicación no necesita reiniciar el registro."""
+    global _shared_manager
+    with _shared_manager_lock:
+        _shared_manager = None

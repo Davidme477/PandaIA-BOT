@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+import time
+from threading import Lock
 from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -18,7 +20,38 @@ ALLOWED_EXTENSIONS = {
     ".gif",
 }
 
-GIFT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+MAX_CACHE_BYTES = 200 * 1024 * 1024
+MAX_CACHE_AGE_SECONDS = 30 * 24 * 60 * 60
+_cache_lock = Lock()
+_last_prune = 0.0
+
+
+def prune_gift_cache(*, now: float | None = None) -> int:
+    """Limita solo cache/gifts, como máximo una vez cada seis horas por proceso."""
+    global _last_prune
+    current = time.time() if now is None else now
+    with _cache_lock:
+        if current - _last_prune < 6 * 60 * 60 or not GIFT_CACHE_DIR.is_dir():
+            return 0
+        _last_prune = current
+        files = [item for item in GIFT_CACHE_DIR.iterdir() if item.is_file() and item.suffix.lower() in ALLOWED_EXTENSIONS]
+        removed = 0
+        for item in list(files):
+            try:
+                if current - item.stat().st_mtime > MAX_CACHE_AGE_SECONDS:
+                    item.unlink(); files.remove(item); removed += 1
+            except OSError:
+                continue
+        sized = []
+        for item in files:
+            try: sized.append((item.stat().st_mtime, item.stat().st_size, item))
+            except OSError: continue
+        total = sum(size for _modified, size, _item in sized)
+        for _modified, size, item in sorted(sized):
+            if total <= MAX_CACHE_BYTES: break
+            try: item.unlink(); total -= size; removed += 1
+            except OSError: continue
+        return removed
 
 
 def clean_gift_id(gift_id: str | int) -> str:
@@ -101,6 +134,9 @@ def download_gift_image(
             "[GiftImageService] No se recibió una URL."
         )
         return None
+
+    GIFT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    prune_gift_cache()
 
     cached_image = find_cached_gift(gift_id)
 

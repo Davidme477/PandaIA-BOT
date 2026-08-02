@@ -50,7 +50,7 @@ def _safe_error(status: int | None = None) -> SpotifyAuthError:
     )
 
 
-def token_request(values: dict[str, str], opener=urlopen) -> dict[str, object]:
+def token_request(values: dict[str, str], opener=urlopen, timeout: float = 15.0) -> dict[str, object]:
     request = Request(
         "https://accounts.spotify.com/api/token",
         data=urlencode(values).encode("utf-8"),
@@ -58,7 +58,7 @@ def token_request(values: dict[str, str], opener=urlopen) -> dict[str, object]:
         method="POST",
     )
     try:
-        with opener(request, timeout=15) as response:
+        with opener(request, timeout=timeout) as response:
             result = json.loads(response.read().decode("utf-8"))
     except HTTPError as error:
         raise _safe_error(error.code) from None
@@ -69,11 +69,13 @@ def token_request(values: dict[str, str], opener=urlopen) -> dict[str, object]:
     return result
 
 
-def refresh_access_token(client_id: str, refresh_token: str, opener=urlopen) -> dict[str, object]:
+def refresh_access_token(
+    client_id: str, refresh_token: str, opener=urlopen, timeout: float = 15.0
+) -> dict[str, object]:
     return token_request({
         "grant_type": "refresh_token", "refresh_token": refresh_token,
         "client_id": client_id,
-    }, opener=opener)
+    }, opener=opener, timeout=timeout)
 
 
 class SpotifyOAuthPKCE:

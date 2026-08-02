@@ -21,7 +21,7 @@ from services.tiktok.tiktok_service import TikTokService
 from services.tiktok.live_state import LiveStats
 from services.live.comment_response_queue import CommentResponseQueue
 from services.live.session_memory import MemorySnapshot
-from services.tts.voice_manager import VoiceManager
+from services.tts.voice_manager import VoiceManager, get_voice_manager
 from services.ollama.personalities import dashboard_defaults
 from services.ollama.ollama_service import OllamaService
 from services.spotify.runtime import SpotifyRuntime
@@ -30,6 +30,7 @@ from services.live.command_router import CommandRouter
 from services.spotify.request_queue import spotify_defaults
 from services.live_watchdog.runtime import LiveWatchdog, WATCHDOG_DEFAULTS
 from services.overlay.cloudflare_tunnel import CloudflareTunnel
+from services.tiktok.gift_image_service import prune_gift_cache
 
 OVERLAY_HEALTH_URL = "http://127.0.0.1:5050/health"
 OLLAMA_TAGS_URL = "http://127.0.0.1:11434/api/tags"
@@ -52,6 +53,7 @@ class PandaWorker(QThread):
         gifts_settings: dict[str, object] | None = None,
         music_callback=None,
         gift_animation_callback=None,
+        voice_manager: VoiceManager | None = None,
     ) -> None:
         super().__init__()
         self.username = username
@@ -66,6 +68,7 @@ class PandaWorker(QThread):
             tts_settings=tts_settings,
             log_callback=self.forward_log,
             memory_callback=self.forward_memory,
+            voice_manager=voice_manager or get_voice_manager(),
         )
         self.music_callback = music_callback
         self.gift_animation_callback = gift_animation_callback
@@ -89,7 +92,7 @@ class PandaWorker(QThread):
                     "Ollama no responde en el puerto 11434.",
                 )
 
-            voice_manager = VoiceManager()
+            voice_manager = self.response_queue.voice_manager
             if voice_manager.is_engine_available(self.tts_engine):
                 self.status_changed.emit(
                     "tts_available",
@@ -265,11 +268,15 @@ class AppController(QObject):
         super().__init__(parent)
         self.worker: PandaWorker | None = None
         self._ollama_warmup_lock = Lock()
+        self._ollama_warmup_thread: Thread | None = None
+        self._overlay_start_lock = Lock()
+        self._overlay_start_thread: Thread | None = None
+        self._gift_services_activated = False
+        self._gift_cache_thread: Thread | None = None
         self.current_username = ""
-        self.voice_manager = VoiceManager()
+        self.voice_manager = get_voice_manager()
         self.overlay_access_token = secrets.token_urlsafe(32)
         self.overlay_process: subprocess.Popen | None = None
-        self.start_overlay_server()
         self.cloudflare_tunnel = CloudflareTunnel(self.overlay_access_token)
 
         settings = self.read_settings()
@@ -288,7 +295,8 @@ class AppController(QObject):
         raw_watchdog = settings.get("live_watchdog", {})
         self.watchdog_settings = {**WATCHDOG_DEFAULTS, **(raw_watchdog if isinstance(raw_watchdog, dict) else {})}
         self.live_watchdog = LiveWatchdog(self.watchdog_settings)
-        self.live_watchdog.start()
+        if bool(self.watchdog_settings.get("enabled")):
+            self.live_watchdog.start()
 
     def publish_initial_state(self) -> None:
         self.publish_voice_settings()
@@ -319,6 +327,7 @@ class AppController(QObject):
         self.live_session_reset.emit()
         self.live_stats_changed.emit(LiveStats())
         self.warmup_ollama_async()
+        self.start_overlay_async()
 
         self.worker = PandaWorker(
             username,
@@ -327,6 +336,7 @@ class AppController(QObject):
             dict(self.gifts_settings),
             music_callback=self.spotify_runtime.submit_query,
             gift_animation_callback=self.gift_animations.handle_gift,
+            voice_manager=self.voice_manager,
         )
         self.worker.status_changed.connect(self.handle_worker_status)
         self.worker.activity_received.connect(self.forward_activity)
@@ -338,17 +348,38 @@ class AppController(QObject):
         self.worker.start()
 
     def start_overlay_server(self) -> None:
-        if PandaWorker.check_url(OVERLAY_HEALTH_URL, 0.5): return
-        project_root = Path(__file__).resolve().parents[1]
-        environment = os.environ.copy(); environment["PANDAIA_OVERLAY_ACCESS_TOKEN"] = self.overlay_access_token
-        flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-        try:
-            self.overlay_process = subprocess.Popen(
-                [sys.executable, "-m", "overlay.server"], cwd=str(project_root), env=environment,
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags,
+        with self._overlay_start_lock:
+            if self.overlay_process is not None and self.overlay_process.poll() is None:
+                return
+            if PandaWorker.check_url(OVERLAY_HEALTH_URL, 0.5):
+                return
+            project_root = Path(__file__).resolve().parents[1]
+            environment = os.environ.copy(); environment["PANDAIA_OVERLAY_ACCESS_TOKEN"] = self.overlay_access_token
+            flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+            try:
+                self.overlay_process = subprocess.Popen(
+                    [sys.executable, "-m", "overlay.server"], cwd=str(project_root), env=environment,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags,
+                )
+            except OSError as error:
+                self.log_message.emit(f"No se pudo iniciar el servidor local del overlay: {error}")
+
+    def start_overlay_async(self) -> None:
+        if self._overlay_start_thread is not None and self._overlay_start_thread.is_alive():
+            return
+        self._overlay_start_thread = Thread(
+            target=self.start_overlay_server, name="pandaia-overlay-start", daemon=True
+        )
+        self._overlay_start_thread.start()
+
+    def activate_gifts_services(self) -> None:
+        self.start_overlay_async()
+        if not self._gift_services_activated:
+            self._gift_services_activated = True
+            self._gift_cache_thread = Thread(
+                target=prune_gift_cache, name="pandaia-gift-cache", daemon=True
             )
-        except OSError as error:
-            self.log_message.emit(f"No se pudo iniciar el servidor local del overlay: {error}")
+            self._gift_cache_thread.start()
 
     @Slot(str, str)
     def forward_spotify_status(self, _state: str, message: str) -> None:
@@ -401,13 +432,16 @@ class AppController(QObject):
 
         def run() -> None:
             try:
-                OllamaService(timeout=30.0, logger=self.log_message.emit).warmup(model)
+                OllamaService(timeout=5.0, logger=self.log_message.emit).warmup(model)
             except Exception as error:
                 self.log_message.emit(f"Calentamiento de Ollama falló: modelo={model}, error={error}")
             finally:
                 self._ollama_warmup_lock.release()
 
-        Thread(target=run, name="pandaia-controller-warmup", daemon=True).start()
+        self._ollama_warmup_thread = Thread(
+            target=run, name="pandaia-controller-warmup", daemon=True
+        )
+        self._ollama_warmup_thread.start()
 
     @Slot()
     def edit_personality(self) -> None:
@@ -441,6 +475,7 @@ class AppController(QObject):
             current_voice=str(self.tts_settings["voice"]),
             current_speed=float(self.tts_settings["speed"]),
             current_volume=float(self.tts_settings["volume"]),
+            manager=self.voice_manager,
             parent=self.parent(),
         )
 
@@ -550,6 +585,8 @@ class AppController(QObject):
     def update_watchdog_settings(self, values: dict[str, object]) -> None:
         self.watchdog_settings.update(values); self.live_watchdog.update_settings(values)
         self.live_watchdog.set_enabled(bool(self.watchdog_settings.get("enabled")))
+        if bool(self.watchdog_settings.get("enabled")) and not self.live_watchdog.isRunning():
+            self.live_watchdog.start()
         settings = self.read_settings(); settings["live_watchdog"] = self.watchdog_settings; self.write_settings(settings)
 
     def open_live_studio(self) -> None:
@@ -598,6 +635,12 @@ class AppController(QObject):
         self.cloudflare_tunnel.stop()
         self.live_watchdog.shutdown()
         self.spotify_runtime.stop()
+        if self._overlay_start_thread is not None and self._overlay_start_thread.is_alive():
+            self._overlay_start_thread.join(timeout=1.0)
+        if self._ollama_warmup_thread is not None and self._ollama_warmup_thread.is_alive():
+            self._ollama_warmup_thread.join(timeout=5.5)
+        if self._gift_cache_thread is not None and self._gift_cache_thread.is_alive():
+            self._gift_cache_thread.join(timeout=1.0)
         if self.worker is not None:
             self.worker.request_stop()
             self.worker.wait(5000)

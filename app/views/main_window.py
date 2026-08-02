@@ -167,7 +167,10 @@ class MainWindow(QMainWindow):
         layout.addWidget(heading); layout.addWidget(text); layout.addStretch(); scroll.setWidget(content); return scroll
 
     def change_page(self, page_index: int) -> None:
-        if 0 <= page_index < self.pages.count(): self.pages.setCurrentIndex(page_index)
+        if 0 <= page_index < self.pages.count():
+            self.pages.setCurrentIndex(page_index)
+            if page_index == 6:
+                self.controller.activate_gifts_services()
 
     def show_watchdog_attention(self, visible: bool, _text: str) -> None:
         self.setWindowTitle("⚠ TikTok requiere atención — PandaIA BOT" if visible else "PandaIA BOT")

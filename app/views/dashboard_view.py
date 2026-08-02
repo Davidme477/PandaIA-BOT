@@ -94,7 +94,18 @@ class DashboardView(QScrollArea):
         self.load_dashboard_settings()
         self.load_voice_settings()
         self.connect_dashboard_signals()
-        self.load_ollama_models()
+        self.load_saved_model()
+
+    def load_saved_model(self) -> None:
+        if self.model_combo is None:
+            return
+        raw = self.read_settings().get("dashboard", {})
+        saved = str(raw.get("model", "")).strip() if isinstance(raw, dict) else ""
+        self._suppress_settings = True
+        self.model_combo.clear()
+        self.model_combo.addItem(saved or "Pulsa Actualizar para buscar modelos")
+        self.model_combo.setEnabled(bool(saved))
+        self._suppress_settings = False
 
     def set_available_width(self, width: int) -> None:
         for grid in (self.cards_grid, self.stats_grid, self.memory_grid):

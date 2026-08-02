@@ -211,7 +211,7 @@ class SpotifyGiftTests(unittest.TestCase):
 
     def test_runtime_closes_cleanly(self):
         runtime = SpotifyRuntime({}, FakeSpotify())
-        runtime.stop(); self.assertFalse(runtime.thread.is_alive())
+        runtime.stop(); self.assertFalse(runtime.is_running())
 
     def test_real_spotify_queue_endpoint_and_origin_mapping(self):
         captured = []
