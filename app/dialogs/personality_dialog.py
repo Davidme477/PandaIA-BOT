@@ -44,11 +44,13 @@ class PersonalityDialog(QDialog):
         language: str,
         custom_name: str,
         custom_prompt: str,
+        response_length: str = "Corta",
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.model = model
         self.language = language
+        self.response_length = response_length
         self.worker: PersonalityPreviewWorker | None = None
         self.setObjectName("voiceDialog")
         self.setWindowTitle("Editar personalidad")
@@ -177,6 +179,7 @@ class PersonalityDialog(QDialog):
             "language": self.language,
             "custom_personality_name": self.name_edit.text().strip(),
             "custom_personality_prompt": self.instructions_edit.toPlainText().strip(),
+            "response_length": self.response_length,
         }
 
     def update_prompt_preview(self) -> None:

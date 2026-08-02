@@ -12,6 +12,7 @@ from services.ollama.ollama_service import OllamaService
 from services.ollama.personalities import build_system_prompt
 from services.tts.voice_manager import VoiceManager
 from services.live.command_router import CommandRouter
+from services.ollama.response_length import ResponseLength, finalize_ollama_response
 
 
 AUTONOMOUS_IDLE_SECONDS = 90.0
@@ -204,6 +205,14 @@ class CommentResponseQueue:
             return
         if self._stopped.is_set():
             return
+        answer = finalize_ollama_response(
+            answer,
+            dashboard.get("response_length", "Corta"),
+            reformulate=lambda original, profile: self._reformulate(original, profile, dashboard),
+            safe_response=self._safe_response(request),
+        )
+        if self._stopped.is_set():
+            return
         if request.kind == "comment" and bool(dashboard.get("use_memory", True)):
             self.memory.add(request.username, request.text, answer)
         self._log(self._answer_log(request, answer))
@@ -234,6 +243,28 @@ class CommentResponseQueue:
             f"El usuario @{request.username.lstrip('@')} escribió: {request.text}"
             f"{context}\nRespóndele directamente."
         )
+
+    def _reformulate(self, original: str, profile: ResponseLength,
+                     dashboard: Mapping[str, object]) -> str:
+        return self.ollama.generate(
+            model=str(dashboard.get("model", "")),
+            prompt=(
+                "Reformula una sola vez esta respuesta para que sea directa, natural y coherente. "
+                f"Conserva nombres, intención, agradecimientos y datos importantes. Usa máximo "
+                f"{profile.max_words} palabras y {profile.max_sentences} "
+                f"{'frase' if profile.max_sentences == 1 else 'frases'} completas. "
+                f"Sin Markdown ni listas. Respuesta original: {original}"
+            ),
+            system_prompt=build_system_prompt(dashboard),
+        )
+
+    @staticmethod
+    def _safe_response(request: ResponseRequest) -> str:
+        if request.kind == "gift":
+            return f"Gracias @{request.username.lstrip('@')} por tu regalo, de verdad alegra muchísimo este live."
+        if request.kind == "autonomous":
+            return "¿Cómo están todos? Cuéntenme qué canción o tema disfrutan hoy."
+        return "No lo entendí bien, ¿puedes preguntarlo otra vez de forma breve?"
 
     def _maybe_autonomous(self) -> None:
         if not self.controls.enabled("autonomous_mode"):

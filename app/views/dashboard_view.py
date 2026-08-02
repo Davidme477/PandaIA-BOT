@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
 from app.widgets.responsive_grid import ResponsiveGrid
 from services.ollama.ollama_service import OllamaService, OllamaServiceError
 from services.ollama.personalities import PERSONALITY_NAMES, dashboard_defaults
+from services.ollama.response_length import RESPONSE_LENGTH_NAMES
 from config.settings_store import read_settings, write_settings_atomic
 from services.live.runtime_controls import stop_button_enabled
 from services.live.session_memory import MemorySnapshot, memory_panel_values
@@ -43,6 +44,7 @@ class DashboardView(QScrollArea):
         self.model_combo: QComboBox | None = None
         self.personality_combo: QComboBox | None = None
         self.language_combo: QComboBox | None = None
+        self.response_length_combo: QComboBox | None = None
         self.refresh_models_button: QPushButton | None = None
         self.model_worker: ModelListWorker | None = None
         self._suppress_settings = False
@@ -149,6 +151,10 @@ class DashboardView(QScrollArea):
         self.language_combo = QComboBox()
         self.language_combo.addItems(["Español", "Inglés", "Portugués"])
         layout.addWidget(self.language_combo)
+        layout.addWidget(QLabel("Longitud de respuesta"))
+        self.response_length_combo = QComboBox(); self.response_length_combo.addItems(RESPONSE_LENGTH_NAMES)
+        self.response_length_combo.setToolTip("Controla palabras y frases antes de enviar la respuesta a voz.")
+        layout.addWidget(self.response_length_combo)
         layout.addStretch()
         button = QPushButton("Editar Personalidad")
         button.setObjectName("primaryButton")
@@ -443,6 +449,10 @@ class DashboardView(QScrollArea):
             self.language_combo.currentTextChanged.connect(
                 lambda value: self.handle_setting_change("language", value)
             )
+        if self.response_length_combo is not None:
+            self.response_length_combo.currentTextChanged.connect(
+                lambda value: self.handle_setting_change("response_length", value)
+            )
         for key, toggle in self.control_toggles.items():
             toggle.toggled.connect(
                 lambda checked, current_key=key:
@@ -475,11 +485,12 @@ class DashboardView(QScrollArea):
             self.language_combo,
             str(dashboard.get("language", "Español")),
         )
+        self.set_combo_value(self.response_length_combo, str(dashboard.get("response_length", "Corta")))
         for key, toggle in self.control_toggles.items():
             toggle.setChecked(bool(dashboard.get(key, True)))
 
     def save_dashboard_settings(self) -> None:
-        if not all((self.model_combo, self.personality_combo, self.language_combo)):
+        if not all((self.model_combo, self.personality_combo, self.language_combo, self.response_length_combo)):
             return
         data = self.read_settings()
         raw_dashboard = data.get("dashboard", {})
@@ -488,6 +499,7 @@ class DashboardView(QScrollArea):
             dashboard["model"] = self.model_combo.currentText()
         dashboard["personality"] = self.personality_combo.currentText()
         dashboard["language"] = self.language_combo.currentText()
+        dashboard["response_length"] = self.response_length_combo.currentText()
         for key, toggle in self.control_toggles.items():
             dashboard[key] = toggle.isChecked()
         data["dashboard"] = dashboard
@@ -497,6 +509,7 @@ class DashboardView(QScrollArea):
         self._suppress_settings = True
         self.set_combo_value(self.personality_combo, str(settings.get("personality", "Amigable")))
         self.set_combo_value(self.language_combo, str(settings.get("language", "Español")))
+        self.set_combo_value(self.response_length_combo, str(settings.get("response_length", "Corta")))
         self._suppress_settings = False
 
     def shutdown_workers(self) -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from services.ollama.response_length import normalize_response_length, response_length
 
 
 @dataclass(frozen=True)
@@ -56,12 +57,17 @@ def build_system_prompt(settings: Mapping[str, object]) -> str:
         if personality == "Personalizada"
         else personality
     )
+    profile = response_length(settings.get("response_length", "Corta"))
     return (
         "Eres PandaIA, asistente de un TikTok Live. "
         f"Personalidad {display_name}: {personality_instructions(settings)} "
         f"Responde exclusivamente en {language}. "
-        "Usa frases cortas, naturales y adecuadas para ser pronunciadas por TTS. "
-        "No uses Markdown, listas, emojis excesivos ni explicaciones largas."
+        "Responde directamente y no repitas la pregunta. "
+        "No uses Markdown, listas, explicaciones innecesarias ni te presentes como una IA. "
+        "Usa lenguaje natural, conversacional y adecuado para ser pronunciado por TTS. "
+        "Si no entiendes, haz una sola pregunta breve. "
+        f"Longitud {profile.name}: usa entre {profile.min_words} y {profile.max_words} palabras "
+        f"y un máximo de {profile.max_sentences} {'frase' if profile.max_sentences == 1 else 'frases'}."
     )
 
 
@@ -80,9 +86,11 @@ def dashboard_defaults(settings: Mapping[str, object] | None = None) -> dict[str
         "use_memory": True,
         "automatic_responses": True,
         "autonomous_mode": True,
+        "response_length": "Corta",
     }
     defaults.update(source)
     defaults["personality"] = normalize_personality(defaults["personality"])
+    defaults["response_length"] = normalize_response_length(defaults["response_length"])
     return defaults
 
 

@@ -377,6 +377,7 @@ class AppController(QObject):
             "model": "Modelo de Ollama",
             "personality": "Personalidad",
             "language": "Idioma",
+            "response_length": "Longitud de respuesta",
             "respond_comments": "Responder a comentarios",
             "read_gifts": "Leer regalos en voz alta",
             "use_memory": "Usar memoria",
@@ -396,6 +397,7 @@ class AppController(QObject):
                 self.dashboard_settings.get("custom_personality_name", "Mi personalidad")
             ),
             custom_prompt=str(self.dashboard_settings.get("custom_personality_prompt", "")),
+            response_length=str(self.dashboard_settings.get("response_length", "Corta")),
             parent=self.parent(),
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
