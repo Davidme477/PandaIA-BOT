@@ -6,9 +6,10 @@ import time
 
 from config.settings_store import read_settings, write_settings_atomic
 from services.spotify.credential_store import WindowsCredentialStore
+from core.app_paths import get_paths
 
 
-SPOTIFY_LOCAL_FILE = Path("config/spotify_local.json")
+SPOTIFY_LOCAL_FILE = get_paths().spotify_file
 PUBLIC_KEYS = {"client_id", "scopes", "account_id", "authorized_at"}
 
 

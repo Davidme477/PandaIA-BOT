@@ -6,6 +6,7 @@ from threading import Lock
 from typing import TYPE_CHECKING
 
 from services.tts.base_engine import TTSEngine, TTSEngineError, VoiceOption
+from core.app_paths import get_paths
 
 if TYPE_CHECKING:
     import numpy as np
@@ -154,7 +155,7 @@ class KokoroService(TTSEngine):
     ) -> str:
         return self._save_and_play(
             text=text,
-            output_path=Path("temp/kokoro/voice_preview.wav"),
+            output_path=get_paths().temp / "kokoro" / "voice_preview.wav",
             voice=voice,
             speed=speed,
             volume=volume,
@@ -165,7 +166,7 @@ class KokoroService(TTSEngine):
     ) -> None:
         self._save_and_play(
             text=text,
-            output_path=Path("temp/kokoro/live_response.wav"),
+            output_path=get_paths().temp / "kokoro" / "live_response.wav",
             voice=voice,
             speed=speed,
             volume=volume,

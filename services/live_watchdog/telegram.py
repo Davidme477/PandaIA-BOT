@@ -8,6 +8,7 @@ from tempfile import NamedTemporaryFile
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from core.app_paths import get_paths
 
 
 TOKEN_RE = re.compile(r"\b\d{6,12}:[A-Za-z0-9_-]{20,}\b")
@@ -25,7 +26,8 @@ class TelegramError(RuntimeError):
 
 
 class TelegramLocalStore:
-    def __init__(self, path: Path | str = Path("config/telegram_local.json")) -> None:
+    def __init__(self, path: Path | str | None = None) -> None:
+        path = path or get_paths().telegram_file
         self.path = Path(path)
 
     def load(self) -> dict[str, object]:

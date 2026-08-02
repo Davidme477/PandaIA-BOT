@@ -1,5 +1,6 @@
 from datetime import datetime
 from pathlib import Path
+from core.app_paths import get_paths
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -18,7 +19,7 @@ from app.widgets.responsive_grid import ResponsiveGrid
 from config.settings_store import read_settings, write_settings_atomic
 
 
-CONFIG_FILE = Path("config/settings.json")
+CONFIG_FILE = get_paths().settings_file
 
 
 class TikTokView(QScrollArea):

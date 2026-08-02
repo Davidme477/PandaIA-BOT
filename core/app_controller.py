@@ -31,10 +31,11 @@ from services.spotify.request_queue import spotify_defaults
 from services.live_watchdog.runtime import LiveWatchdog, WATCHDOG_DEFAULTS
 from services.overlay.cloudflare_tunnel import CloudflareTunnel
 from services.tiktok.gift_image_service import prune_gift_cache
+from core.app_paths import get_paths, is_frozen
 
 OVERLAY_HEALTH_URL = "http://127.0.0.1:5050/health"
 OLLAMA_TAGS_URL = "http://127.0.0.1:11434/api/tags"
-CONFIG_FILE = Path("config/settings.json")
+CONFIG_FILE = get_paths().settings_file
 
 
 class PandaWorker(QThread):
@@ -353,12 +354,12 @@ class AppController(QObject):
                 return
             if PandaWorker.check_url(OVERLAY_HEALTH_URL, 0.5):
                 return
-            project_root = Path(__file__).resolve().parents[1]
             environment = os.environ.copy(); environment["PANDAIA_OVERLAY_ACCESS_TOKEN"] = self.overlay_access_token
             flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
             try:
+                command = [sys.executable, "--overlay-server"] if is_frozen() else [sys.executable, "-m", "overlay.server"]
                 self.overlay_process = subprocess.Popen(
-                    [sys.executable, "-m", "overlay.server"], cwd=str(project_root), env=environment,
+                    command, env=environment,
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags,
                 )
             except OSError as error:

@@ -8,8 +8,9 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 
-PROJECT_DIR = Path(__file__).resolve().parents[2]
-GIFT_CACHE_DIR = PROJECT_DIR / "cache" / "gifts"
+from core.app_paths import get_paths
+
+GIFT_CACHE_DIR = get_paths().cache / "gifts"
 
 MAX_IMAGE_SIZE = 10 * 1024 * 1024
 ALLOWED_EXTENSIONS = {

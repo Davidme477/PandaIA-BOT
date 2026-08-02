@@ -1,4 +1,5 @@
 from pathlib import Path
+from core.app_paths import get_paths
 
 from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtWidgets import (
@@ -14,7 +15,7 @@ from services.live.runtime_controls import stop_button_enabled
 from services.live.session_memory import MemorySnapshot, memory_panel_values
 from services.tiktok.live_state import LiveStats, format_count, format_elapsed
 
-CONFIG_FILE = Path("config/settings.json")
+CONFIG_FILE = get_paths().settings_file
 
 
 class ModelListWorker(QThread):

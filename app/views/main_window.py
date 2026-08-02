@@ -20,6 +20,8 @@ from app.widgets.footer import Footer
 from app.widgets.header import Header
 from app.widgets.sidebar import Sidebar
 from core.app_controller import AppController
+from core.app_paths import resource_path
+from PySide6.QtGui import QIcon
 
 
 class MainWindow(QMainWindow):
@@ -27,6 +29,7 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.setWindowTitle("PandaIA BOT")
+        self.setWindowIcon(QIcon(str(resource_path("resources", "icons", "pandaia.ico"))))
         self.setMinimumSize(900, 650)
         self.resize(1600, 900)
 

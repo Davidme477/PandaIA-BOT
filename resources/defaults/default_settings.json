@@ -1,0 +1,19 @@
+{
+  "dashboard": {
+    "model": "qwen3:4b",
+    "personality": "Amigable",
+    "language": "Español",
+    "response_length": "Corta",
+    "respond_comments": false,
+    "read_gifts": true,
+    "use_memory": false,
+    "command_only_mode": true,
+    "autonomous_mode": false
+  },
+  "tts": {
+    "engine": "windows",
+    "voice": "",
+    "speed": 1.0,
+    "volume": 1.0
+  }
+}

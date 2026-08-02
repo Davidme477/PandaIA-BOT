@@ -44,6 +44,8 @@ tmp/
 build/
 dist/
 *.spec
+!packaging/PandaIA.spec
+installer_output/
 
 # Configuración local de editores
 .vscode/
