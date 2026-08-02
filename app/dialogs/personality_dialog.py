@@ -24,7 +24,7 @@ class PersonalityPreviewWorker(QThread):
     def run(self) -> None:
         try:
             answer = generate_personality_preview(
-                OllamaService(timeout=30.0),
+                OllamaService(timeout=10.0),
                 model=self.model,
                 message=self.message,
                 settings=self.settings,

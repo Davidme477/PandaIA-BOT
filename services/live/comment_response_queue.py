@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from queue import Empty, Queue
 from threading import Event, Lock, Thread
 from time import monotonic
+import inspect
 
 from services.live.runtime_controls import RuntimeControls
 from services.live.session_memory import MemoryCallback, SessionMemory
@@ -49,9 +50,9 @@ class CommentResponseQueue:
         self.memory = memory or SessionMemory(on_change=memory_callback)
         if memory is not None:
             self.memory.set_callback(memory_callback)
-        self.ollama = ollama or OllamaService()
-        self.voice_manager = voice_manager or VoiceManager()
         self.log_callback = log_callback
+        self.ollama = ollama or OllamaService(logger=self._log)
+        self.voice_manager = voice_manager or VoiceManager()
         self.autonomous_interval = autonomous_interval
         self._items: Queue[ResponseRequest] = Queue()
         self._stopped = Event()
@@ -61,6 +62,7 @@ class CommentResponseQueue:
         self._connected = False
         self._last_activity = monotonic()
         self._autonomous_sent = False
+        self._warmup_lock = Lock()
         self.memory.set_enabled(self.controls.enabled("use_memory"))
 
     def start(self) -> None:
@@ -79,6 +81,7 @@ class CommentResponseQueue:
         self.memory.set_connected(connected)
         if connected:
             self.start()
+            self.warmup_async()
 
     def update_setting(self, key: str, value: object) -> None:
         self.controls.update_dashboard(key, value)
@@ -86,6 +89,25 @@ class CommentResponseQueue:
             self.memory.set_enabled(bool(value))
         if key == "autonomous_mode" and not bool(value):
             self._remove_kind("autonomous")
+        if key in {"model", "respond_comments", "autonomous_mode"} and bool(value):
+            self.warmup_async()
+
+    def warmup_async(self) -> None:
+        dashboard, _tts = self.controls.snapshot()
+        model = str(dashboard.get("model", "")).strip()
+        warmup = getattr(self.ollama, "warmup", None)
+        if not model or not callable(warmup) or not self._warmup_lock.acquire(blocking=False):
+            return
+
+        def run() -> None:
+            try:
+                warmup(model)
+            except Exception as error:
+                self._log(f"Calentamiento de Ollama falló: modelo={model}, error={error}")
+            finally:
+                self._warmup_lock.release()
+
+        Thread(target=run, name="pandaia-ollama-warmup", daemon=True).start()
 
     def enqueue(self, username: str, comment: str) -> bool:
         return self.enqueue_comment(username, comment)
@@ -195,21 +217,35 @@ class CommentResponseQueue:
             return
         prompt = self._prompt(request, dashboard)
         try:
-            answer = self.ollama.generate(
+            answer = self._generate(
                 model=str(dashboard.get("model", "")),
                 prompt=prompt,
                 system_prompt=build_system_prompt(dashboard),
+                response_length=dashboard.get("response_length", "Corta"),
             )
         except Exception as error:
             self._log(f"Error de Ollama: {error}")
             return
         if self._stopped.is_set():
             return
+        validation_started = monotonic()
+        reformulated = False
+
+        def note_reformulation() -> None:
+            nonlocal reformulated
+            reformulated = True
+            self._log(f"Reformulación de Ollama: modelo={dashboard.get('model', '')}")
+
         answer = finalize_ollama_response(
             answer,
             dashboard.get("response_length", "Corta"),
             reformulate=lambda original, profile: self._reformulate(original, profile, dashboard),
             safe_response=self._safe_response(request),
+            on_reformulation=note_reformulation,
+        )
+        self._log(
+            f"Validador: tiempo={monotonic() - validation_started:.3f}s, "
+            f"reformulación={'sí' if reformulated else 'no'}"
         )
         if self._stopped.is_set():
             return
@@ -246,7 +282,7 @@ class CommentResponseQueue:
 
     def _reformulate(self, original: str, profile: ResponseLength,
                      dashboard: Mapping[str, object]) -> str:
-        return self.ollama.generate(
+        return self._generate(
             model=str(dashboard.get("model", "")),
             prompt=(
                 "Reformula una sola vez esta respuesta para que sea directa, natural y coherente. "
@@ -256,7 +292,20 @@ class CommentResponseQueue:
                 f"Sin Markdown ni listas. Respuesta original: {original}"
             ),
             system_prompt=build_system_prompt(dashboard),
+            response_length=profile.name,
         )
+
+    def _generate(self, **values: object) -> str:
+        """Pasa controles de latencia sin romper servicios falsos antiguos."""
+        generate = getattr(self.ollama, "generate")
+        signature = inspect.signature(generate)
+        accepts_kwargs = any(
+            parameter.kind == inspect.Parameter.VAR_KEYWORD
+            for parameter in signature.parameters.values()
+        )
+        if not accepts_kwargs and "response_length" not in signature.parameters:
+            values.pop("response_length", None)
+        return str(generate(**values))
 
     @staticmethod
     def _safe_response(request: ResponseRequest) -> str:

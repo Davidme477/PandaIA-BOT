@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+import inspect
 from services.ollama.response_length import normalize_response_length, response_length
 
 
@@ -102,8 +103,16 @@ def generate_personality_preview(
     settings: Mapping[str, object],
 ) -> str:
     generate = getattr(ollama, "generate")
-    return str(generate(
+    values = dict(
         model=model,
         prompt=message,
         system_prompt=build_system_prompt(settings),
-    )).strip()
+        response_length=settings.get("response_length", "Corta"),
+    )
+    signature = inspect.signature(generate)
+    if (
+        "response_length" not in signature.parameters
+        and not any(item.kind == inspect.Parameter.VAR_KEYWORD for item in signature.parameters.values())
+    ):
+        values.pop("response_length")
+    return str(generate(**values)).strip()

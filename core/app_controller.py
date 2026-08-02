@@ -6,6 +6,7 @@ import secrets
 import subprocess
 import sys
 import time
+from threading import Lock, Thread
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -22,6 +23,7 @@ from services.live.comment_response_queue import CommentResponseQueue
 from services.live.session_memory import MemorySnapshot
 from services.tts.voice_manager import VoiceManager
 from services.ollama.personalities import dashboard_defaults
+from services.ollama.ollama_service import OllamaService
 from services.spotify.runtime import SpotifyRuntime
 from services.overlay.gift_animations import GIFT_DEFAULTS, GiftAnimationManager
 from services.live.command_router import CommandRouter
@@ -262,6 +264,7 @@ class AppController(QObject):
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self.worker: PandaWorker | None = None
+        self._ollama_warmup_lock = Lock()
         self.current_username = ""
         self.voice_manager = VoiceManager()
         self.overlay_access_token = secrets.token_urlsafe(32)
@@ -315,6 +318,7 @@ class AppController(QObject):
         self.log_message.emit(f"Iniciando PandaIA para {username}.")
         self.live_session_reset.emit()
         self.live_stats_changed.emit(LiveStats())
+        self.warmup_ollama_async()
 
         self.worker = PandaWorker(
             username,
@@ -372,6 +376,8 @@ class AppController(QObject):
         self.save_dashboard_settings()
         if self.worker is not None:
             self.worker.update_setting(key, value)
+        if key in {"model", "respond_comments", "autonomous_mode"} and bool(value):
+            self.warmup_ollama_async()
 
         setting_names = {
             "model": "Modelo de Ollama",
@@ -387,6 +393,21 @@ class AppController(QObject):
         name = setting_names.get(key, key)
         status = "Activado" if value is True else "Desactivado" if value is False else str(value)
         self.log_message.emit(f"{name}: {status}")
+
+    def warmup_ollama_async(self) -> None:
+        model = str(self.dashboard_settings.get("model", "")).strip()
+        if not model or not self._ollama_warmup_lock.acquire(blocking=False):
+            return
+
+        def run() -> None:
+            try:
+                OllamaService(timeout=30.0, logger=self.log_message.emit).warmup(model)
+            except Exception as error:
+                self.log_message.emit(f"Calentamiento de Ollama falló: modelo={model}, error={error}")
+            finally:
+                self._ollama_warmup_lock.release()
+
+        Thread(target=run, name="pandaia-controller-warmup", daemon=True).start()
 
     @Slot()
     def edit_personality(self) -> None:

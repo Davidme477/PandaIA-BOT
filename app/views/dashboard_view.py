@@ -21,9 +21,20 @@ class ModelListWorker(QThread):
     loaded = Signal(list)
     failed = Signal(str)
 
+    def __init__(self, model: str = "") -> None:
+        super().__init__()
+        self.model = model.strip()
+
     def run(self) -> None:
         try:
-            self.loaded.emit(OllamaService(timeout=5.0).list_models())
+            service = OllamaService(timeout=10.0)
+            models = service.list_models()
+            self.loaded.emit(models)
+            if self.model and self.model in models:
+                try:
+                    service.warmup(self.model)
+                except Exception as error:
+                    print(f"[PandaIA] Calentamiento de Ollama falló: {error}")
         except OllamaServiceError as error:
             self.failed.emit(str(error))
 
@@ -393,7 +404,9 @@ class DashboardView(QScrollArea):
             return
         if self.refresh_models_button is not None:
             self.refresh_models_button.setEnabled(False)
-        self.model_worker = ModelListWorker()
+        raw_dashboard = self.read_settings().get("dashboard", {})
+        saved_model = str(raw_dashboard.get("model", "")) if isinstance(raw_dashboard, dict) else ""
+        self.model_worker = ModelListWorker(saved_model)
         self.model_worker.loaded.connect(self.models_loaded)
         self.model_worker.failed.connect(self.models_failed)
         self.model_worker.finished.connect(self.model_refresh_finished)
