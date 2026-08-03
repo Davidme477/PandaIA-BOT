@@ -34,6 +34,7 @@ app = Flask(
 
 event_queue: deque[dict[str, Any]] = deque(maxlen=256)
 client_cursors: dict[str, int] = {}
+client_seen: dict[str, set[int]] = {}
 event_sequence = 0
 queue_lock = Lock()
 ACCESS_TOKEN = os.environ.get("PANDAIA_OVERLAY_ACCESS_TOKEN", "")
@@ -70,12 +71,16 @@ def disable_overlay_cache(response):
     return response
 
 
-def enqueue_gift(event: dict[str, Any]) -> int:
+def enqueue_event(event: dict[str, Any]) -> int:
     global event_sequence
     event_sequence += 1
     stored = dict(event); stored["_overlay_sequence"] = event_sequence
     event_queue.append(stored)
     return event_sequence
+
+
+def enqueue_gift(event: dict[str, Any]) -> int:
+    return enqueue_event(event)
 
 
 @app.get("/overlay")
@@ -108,10 +113,13 @@ def next_event():
     """
     client_id = str(request.args.get("client_id", "legacy")).strip()[:64] or "legacy"
     with queue_lock:
-        cursor = client_cursors.get(client_id, 0)
-        available = [item for item in event_queue if item.get("type") == "gift" and int(item.get("_overlay_sequence", 0)) > cursor]
-        stored_event = available[0] if available else None
-        if stored_event is not None: client_cursors[client_id] = int(stored_event["_overlay_sequence"])
+        seen = client_seen.setdefault(client_id, set())
+        allowed = {"gift", "member_level_up", "member_level_leaderboard"}
+        available = [item for item in event_queue if item.get("type") in allowed and int(item.get("_overlay_sequence", 0)) not in seen]
+        priority = {"member_level_up": 0, "gift": 1, "member_level_leaderboard": 2}
+        stored_event = min(available, key=lambda item: (priority.get(str(item.get("type")), 9), int(item.get("_overlay_sequence", 0)))) if available else None
+        if stored_event is not None:
+            sequence = int(stored_event["_overlay_sequence"]); seen.add(sequence); client_cursors[client_id] = sequence
         remaining_events = max(0, len(available) - 1)
         event = {key: value for key, value in stored_event.items() if key != "_overlay_sequence"} if stored_event else None
 
@@ -166,8 +174,19 @@ def add_event():
             400,
         )
 
+    if event_type not in {"gift", "member_level_up", "member_level_leaderboard"}:
+        return jsonify({"ok": False, "error": "Tipo de evento no admitido por el overlay."}), 400
+
     if event_type != "gift":
-        return jsonify({"ok": False, "error": "El overlay acepta exclusivamente eventos gift."}), 400
+        try: event = sanitize_event(payload)
+        except (ValueError, TypeError) as error: return jsonify({"ok": False, "error": str(error)}), 400
+        if event_type == "member_level_up" and (not event.get("user_id") or not event.get("new_level")):
+            return jsonify({"ok": False, "error": "user_id y new_level son obligatorios."}), 400
+        if event_type == "member_level_leaderboard" and not event.get("members"):
+            return jsonify({"ok": False, "error": "El ranking requiere al menos un miembro."}), 400
+        with queue_lock:
+            enqueue_event(event); queue_position = len(event_queue)
+        return jsonify({"ok": True, "queue_position": queue_position, "event": event})
 
     gift_id = str(
         payload.get("gift_id", "")
@@ -381,6 +400,7 @@ def clear_events():
         removed_events = len(event_queue)
         event_queue.clear()
         client_cursors.clear()
+        client_seen.clear()
 
     return jsonify(
         {

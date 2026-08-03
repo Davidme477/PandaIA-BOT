@@ -146,6 +146,7 @@ class MainWindow(QMainWindow):
             self.dashboard_view.apply_dashboard_settings
         )
         self.gifts_view.settings_changed.connect(self.controller.update_gifts_settings)
+        self.controller.member_levels_changed.connect(self.gifts_view.set_member_rows)
         watchdog = self.controller.live_watchdog
         self.settings_view.settings_changed.connect(self.controller.update_watchdog_settings)
         self.settings_view.save_token_requested.connect(watchdog.save_token)

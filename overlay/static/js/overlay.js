@@ -8,8 +8,16 @@ const giftSender = document.getElementById("gift-sender");
 const giftName = document.getElementById("gift-name");
 const flashEffect = document.getElementById("flash-effect");
 const ambientLight = document.getElementById("ambient-light");
+const memberStage = document.getElementById("member-level-stage");
+const memberTitle = document.getElementById("member-title");
+const memberSubtitle = document.getElementById("member-subtitle");
+const memberAvatar = document.getElementById("member-avatar");
+const memberLevel = document.getElementById("member-level");
+const rankingStage = document.getElementById("member-ranking-stage");
+const rankingWheels = document.getElementById("ranking-wheels");
 
 let animationRunning = false;
+let persistentRankingEvent = null;
 let pollingEnabled = true;
 const overlayClientId = sessionStorage.getItem("pandaia-overlay-client-id") ||
     (window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : `overlay-${Date.now()}-${Math.random()}`);
@@ -99,6 +107,23 @@ function clearAnimation() {
 
     giftSender.textContent = "";
     giftName.textContent = "";
+    memberStage.classList.remove("visible"); memberStage.setAttribute("aria-hidden", "true");
+    rankingStage.classList.remove("visible", "ranking-top", "ranking-bottom"); rankingStage.setAttribute("aria-hidden", "true");
+    memberAvatar.removeAttribute("src"); rankingWheels.replaceChildren();
+}
+
+function playLevelSound(event) {
+    if (!event.sound) return;
+    try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        const context = new AudioContext(); const oscillator = context.createOscillator(); const gain = context.createGain();
+        oscillator.type = "sine"; oscillator.frequency.setValueAtTime(220, context.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(880, context.currentTime + 1.4);
+        gain.gain.setValueAtTime(Math.max(0, Math.min(1, Number(event.volume || 50) / 100)) * 0.18, context.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 1.7);
+        oscillator.connect(gain); gain.connect(context.destination); oscillator.start(); oscillator.stop(context.currentTime + 1.7);
+        oscillator.onended = () => context.close();
+    } catch (error) { console.warn("No se pudo reproducir el sonido del ascenso.", error); }
 }
 
 
@@ -120,6 +145,22 @@ function preloadImage(imageUrl) {
 
         image.src = imageUrl;
     });
+}
+
+function renderRanking(event) {
+    rankingWheels.replaceChildren();
+    const members = Array.isArray(event.members) ? event.members.slice(0, 3) : [];
+    members.forEach((member, index) => {
+        const wheel = document.createElement("article"); wheel.className = `ranking-wheel place-${index + 1}`;
+        const image = document.createElement("img"); image.alt = ""; if (member.avatar) image.src = member.avatar;
+        const place = document.createElement("b"); place.textContent = `#${index + 1}`;
+        const level = document.createElement("strong"); level.textContent = String(member.current_level || 0);
+        const name = document.createElement("span"); name.textContent = member.nickname || member.unique_id || "Miembro";
+        wheel.append(place, image, level, name); rankingWheels.append(wheel);
+    });
+    rankingStage.style.setProperty("--ranking-scale", `${Math.max(50, Math.min(150, Number(event.scale || 100))) / 100}`);
+    rankingStage.classList.add(String(event.position).toLowerCase().includes("inferior") ? "ranking-bottom" : "ranking-top");
+    rankingStage.setAttribute("aria-hidden", "false"); restartAnimation(rankingStage, "visible");
 }
 
 
@@ -170,18 +211,31 @@ async function playEvent(event) {
         return;
     }
 
-    if (event.type !== "gift") return;
+    if (!["gift", "member_level_up", "member_level_leaderboard"].includes(event.type)) return;
     if (event.duration_ms) document.documentElement.style.setProperty("--animation-duration", `${Number(event.duration_ms)}ms`);
     animationRunning = true;
 
     try {
         clearAnimation();
 
-        await prepareGift(event);
-
-        startAnimation();
-
-        await sleep(ANIMATION_DURATION_MS);
+        const duration = Math.max(1000, Number(event.duration_ms || (event.type === "gift" ? ANIMATION_DURATION_MS : 8000)));
+        document.documentElement.style.setProperty("--member-duration", `${duration}ms`);
+        document.documentElement.style.setProperty("--ranking-duration", `${duration}ms`);
+        if (event.type === "gift") {
+            await prepareGift(event); startAnimation();
+        } else if (event.type === "member_level_up") {
+            playLevelSound(event);
+            const user = getSenderName(event).replace(/^@/, "");
+            memberTitle.textContent = String(event.message || "¡FELICIDADES, @{user}!").replace("{user}", user);
+            memberSubtitle.textContent = `¡SUBISTE AL NIVEL ${Number(event.new_level)}!`;
+            memberLevel.textContent = String(Number(event.new_level));
+            const avatar = String(event.avatar_url || ""); if (avatar) memberAvatar.src = avatar;
+            memberStage.setAttribute("aria-hidden", "false"); restartAnimation(memberStage, "visible");
+        } else {
+            if (String(event.mode).toLowerCase().includes("siempre")) persistentRankingEvent = event;
+            renderRanking(event);
+        }
+        await sleep(event.type === "member_level_leaderboard" && persistentRankingEvent === event ? 250 : duration);
     } catch (error) {
         console.error(
             "No se pudo reproducir el regalo:",
@@ -190,6 +244,7 @@ async function playEvent(event) {
         );
     } finally {
         clearAnimation();
+        if (persistentRankingEvent) renderRanking(persistentRankingEvent);
 
         await sleep(PAUSE_BETWEEN_EVENTS_MS);
 

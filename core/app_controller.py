@@ -31,6 +31,7 @@ from services.spotify.request_queue import spotify_defaults
 from services.live_watchdog.runtime import LiveWatchdog, WATCHDOG_DEFAULTS
 from services.overlay.cloudflare_tunnel import CloudflareTunnel
 from services.tiktok.gift_image_service import prune_gift_cache
+from services.tiktok.member_levels import DEFAULTS as MEMBER_LEVEL_DEFAULTS, MemberLevelManager
 from core.app_paths import get_paths, is_frozen
 
 OVERLAY_HEALTH_URL = "http://127.0.0.1:5050/health"
@@ -54,6 +55,7 @@ class PandaWorker(QThread):
         gifts_settings: dict[str, object] | None = None,
         music_callback=None,
         gift_animation_callback=None,
+        member_level_callback=None,
         voice_manager: VoiceManager | None = None,
     ) -> None:
         super().__init__()
@@ -73,6 +75,7 @@ class PandaWorker(QThread):
         )
         self.music_callback = music_callback
         self.gift_animation_callback = gift_animation_callback
+        self.member_level_callback = member_level_callback
         self.command_router = CommandRouter(
             chat_command=str(dashboard_settings.get("chat_command", "/")),
             music_command=str((gifts_settings or {}).get("command", "a/")),
@@ -119,6 +122,7 @@ class PandaWorker(QThread):
                 gift_animation_callback=self.forward_gift_animation,
                 stats_callback=self.forward_live_stats,
                 reset_callback=self.live_session_reset.emit,
+                member_level_callback=self.member_level_callback,
             )
             self.status_changed.emit(
                 "tiktok_connecting",
@@ -264,6 +268,7 @@ class AppController(QObject):
     voice_settings_changed = Signal(str, str, str, float, float)
     dashboard_settings_changed = Signal(object)
     gifts_settings_changed = Signal(object)
+    member_levels_changed = Signal(object)
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -287,12 +292,13 @@ class AppController(QObject):
         )
         self.tts_settings = self.normalize_tts(settings.get("tts", {}))
         raw_gifts = settings.get("gifts", {})
-        self.gifts_settings = {**GIFT_DEFAULTS, **(raw_gifts if isinstance(raw_gifts, dict) else {})}
+        self.gifts_settings = {**GIFT_DEFAULTS, **MEMBER_LEVEL_DEFAULTS, **(raw_gifts if isinstance(raw_gifts, dict) else {})}
         self.gifts_settings = spotify_defaults(self.gifts_settings)
         self.spotify_runtime = SpotifyRuntime(self.gifts_settings)
         self.spotify_runtime.state_changed.connect(self.forward_spotify_status)
         self.spotify_runtime.announce_callback = self.announce_music_request
         self.gift_animations = GiftAnimationManager(self.gifts_settings)
+        self.member_levels = MemberLevelManager(self.gifts_settings)
         raw_watchdog = settings.get("live_watchdog", {})
         self.watchdog_settings = {**WATCHDOG_DEFAULTS, **(raw_watchdog if isinstance(raw_watchdog, dict) else {})}
         self.live_watchdog = LiveWatchdog(self.watchdog_settings)
@@ -337,6 +343,7 @@ class AppController(QObject):
             dict(self.gifts_settings),
             music_callback=self.spotify_runtime.submit_query,
             gift_animation_callback=self.gift_animations.handle_gift,
+            member_level_callback=self.observe_member_level,
             voice_manager=self.voice_manager,
         )
         self.worker.status_changed.connect(self.handle_worker_status)
@@ -577,11 +584,17 @@ class AppController(QObject):
         self.gifts_settings.update(values)
         self.spotify_runtime.update_settings(values)
         self.gift_animations.update_settings(values)
+        self.member_levels.update_settings(values)
         if self.worker is not None: self.worker.update_music_command(values.get("command", "a/"))
         settings = self.read_settings()
         settings["gifts"] = self.gifts_settings
         self.write_settings(settings)
         self.gifts_settings_changed.emit(dict(self.gifts_settings))
+
+    def observe_member_level(self, user: object, *, event_id: str = "") -> bool:
+        sent = self.member_levels.observe_user(user, event_id=event_id)
+        self.member_levels_changed.emit(self.member_levels.history.top(100))
+        return sent
 
     def update_watchdog_settings(self, values: dict[str, object]) -> None:
         self.watchdog_settings.update(values); self.live_watchdog.update_settings(values)

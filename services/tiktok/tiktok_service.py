@@ -33,6 +33,7 @@ class GiftAnimationCallback(Protocol):
                  username: str, image_url: str = "", event_id: str = "") -> object: ...
 StatsCallback = Callable[[LiveStats], None]
 ResetCallback = Callable[[], None]
+MemberLevelCallback = Callable[..., object]
 
 
 def get_first_image_url(gift: object) -> str:
@@ -81,6 +82,7 @@ class TikTokService:
         gift_animation_callback: GiftAnimationCallback | None = None,
         stats_callback: StatsCallback | None = None,
         reset_callback: ResetCallback | None = None,
+        member_level_callback: MemberLevelCallback | None = None,
     ) -> None:
         self.username = username.strip()
         self.status_callback = status_callback
@@ -90,6 +92,7 @@ class TikTokService:
         self.gift_animation_callback = gift_animation_callback
         self.stats_callback = stats_callback
         self.reset_callback = reset_callback
+        self.member_level_callback = member_level_callback
         self.live_state = LiveState()
         self._timer_task: asyncio.Task[None] | None = None
         self._live_connected = False
@@ -102,6 +105,15 @@ class TikTokService:
         )
 
         self.register_events()
+
+    def inspect_member_level(self, event: object) -> None:
+        if self.member_level_callback is None: return
+        user = getattr(event, "user", None)
+        if user is None: return
+        try:
+            self.member_level_callback(user, event_id=str(getattr(event, "id", "")))
+        except Exception as error:
+            print("[TikTokService] Error al procesar nivel de miembro:", error)
 
     def notify_status(
         self,
@@ -193,6 +205,7 @@ class TikTokService:
         ) -> None:
             if not self._live_connected:
                 return
+            self.inspect_member_level(event)
             sender = getattr(
                 event.user,
                 "unique_id",
@@ -236,6 +249,7 @@ class TikTokService:
         ) -> None:
             if not self._live_connected:
                 return
+            self.inspect_member_level(event)
             sender = getattr(
                 event.user,
                 "unique_id",
@@ -262,6 +276,7 @@ class TikTokService:
         ) -> None:
             if not self._live_connected:
                 return
+            self.inspect_member_level(event)
             gift = event.gift
 
             if gift is None:
@@ -396,6 +411,7 @@ class TikTokService:
         async def on_like(event: LikeEvent) -> None:
             if not self._live_connected:
                 return
+            self.inspect_member_level(event)
             self.notify_stats(
                 self.live_state.update_likes(
                     total=event.total,

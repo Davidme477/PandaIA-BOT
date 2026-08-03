@@ -20,6 +20,7 @@ from services.spotify.runtime import SpotifyRuntime
 from services.spotify.models import RequestStatus
 from app.widgets.responsive_grid import ResponsiveGrid
 from services.overlay.cloudflare_tunnel import CloudflareTunnel, INSTALL_COMMAND
+from services.tiktok.member_levels import DEFAULTS as MEMBER_DEFAULTS, MemberLevelHistory, MemberLevelManager
 
 
 class SpotifyAuthWorker(QThread):
@@ -52,6 +53,8 @@ class GiftsView(QScrollArea):
         self.auth_worker: SpotifyAuthWorker | None = None
         self._loading = True
         self.settings = dict(runtime.settings)
+        self.member_history = MemberLevelHistory()
+        self.member_manager = MemberLevelManager(self.settings, history=self.member_history)
         self.responsive_groups: list[ResponsiveGrid] = []
         self.setObjectName("giftsScroll")
         self.setWidgetResizable(True)
@@ -70,6 +73,7 @@ class GiftsView(QScrollArea):
         subtitle.setObjectName("pageSubtitle"); subtitle.setWordWrap(True)
         self.tabs = QTabWidget(); self.tabs.setObjectName("featureTabs")
         self.tabs.addTab(self._animations_tab(), "Animaciones")
+        self.tabs.addTab(self._member_levels_tab(), "Niveles de miembros")
         self.tabs.addTab(self._spotify_tab(), "Spotify")
         self.tabs.addTab(self._overlay_tab(), "Overlay")
         root.addWidget(title); root.addWidget(subtitle); root.addWidget(self.tabs, 1)
@@ -183,9 +187,43 @@ class GiftsView(QScrollArea):
         layout.addWidget(queue_panel); layout.addWidget(spotify_panel)
         return self._tab_scroll(panel)
 
+    def _member_levels_tab(self) -> QWidget:
+        panel, layout = self.panel("Ascensos y Top 3 de miembros")
+        self.member_level_ups = QCheckBox("Activar ascensos")
+        self.member_ranking = QCheckBox("Activar ranking")
+        self.member_ranking_mode = QComboBox(); self.member_ranking_mode.addItems(["Siempre visible", "Periódicamente", "Oculto"])
+        self.member_interval = QSpinBox(); self.member_interval.setRange(1, 120); self.member_interval.setSuffix(" min")
+        self.member_rank_duration = QSpinBox(); self.member_rank_duration.setRange(3, 60); self.member_rank_duration.setSuffix(" s")
+        self.member_position = QComboBox(); self.member_position.addItems(["Superior", "Inferior"])
+        self.member_scale = QSpinBox(); self.member_scale.setRange(50, 150); self.member_scale.setSuffix(" %")
+        self.member_sound = QCheckBox("Activar sonido del ascenso")
+        self.member_volume = QSpinBox(); self.member_volume.setRange(0, 100); self.member_volume.setSuffix(" %")
+        self.member_level_duration = QSpinBox(); self.member_level_duration.setRange(4, 30); self.member_level_duration.setSuffix(" s")
+        self.member_text = QLineEdit(); self.member_text.setPlaceholderText("¡FELICIDADES, @{user}!")
+        self.member_diagnostics = QCheckBox("Activar diagnóstico de insignias")
+        form = QGridLayout()
+        controls = (("Modo del ranking", self.member_ranking_mode), ("Intervalo", self.member_interval),
+                    ("Duración Top 3", self.member_rank_duration), ("Posición", self.member_position),
+                    ("Escala", self.member_scale), ("Duración ascenso", self.member_level_duration),
+                    ("Volumen", self.member_volume), ("Texto", self.member_text))
+        form.addWidget(self.member_level_ups, 0, 0); form.addWidget(self.member_ranking, 0, 1)
+        for row, (name, widget) in enumerate(controls, 1): form.addWidget(QLabel(name), row, 0); form.addWidget(widget, row, 1)
+        form.addWidget(self.member_sound, len(controls) + 1, 0, 1, 2); form.addWidget(self.member_diagnostics, len(controls) + 2, 0, 1, 2)
+        layout.addLayout(form)
+        self.member_summary = QLabel(); self.member_summary.setObjectName("helperText")
+        self.member_table = QTableWidget(0, 3); self.member_table.setHorizontalHeaderLabels(["Miembro", "Nivel actual", "Club"])
+        self.member_table.horizontalHeader().setStretchLastSection(True); self.member_table.setMinimumHeight(180)
+        layout.addWidget(self.member_summary); layout.addWidget(self.member_table)
+        self.test_level_up = QPushButton("Probar ascenso"); self.test_top3 = QPushButton("Probar Top 3")
+        self.reset_members = QPushButton("Reiniciar historial")
+        for button in (self.test_level_up, self.test_top3): button.setObjectName("primaryButton")
+        self.reset_members.setObjectName("voiceSecondaryButton")
+        layout.addWidget(self.responsive_group((self.test_level_up, self.test_top3, self.reset_members), wide=3, medium=1))
+        return self._tab_scroll(panel)
+
     def _overlay_tab(self) -> QWidget:
         panel, layout = self.panel("Overlay para OBS / TikTok Live Studio")
-        self.overlay_state = QLabel("Este overlay muestra exclusivamente regalos y animaciones de TikTok.")
+        self.overlay_state = QLabel("Este overlay muestra exclusivamente regalos, ascensos y ranking de miembros de TikTok.")
         self.overlay_state.setWordWrap(True)
         self.overlay_url = QLineEdit(OVERLAY_URL); self.overlay_url.setReadOnly(True)
         copy = QPushButton("Copiar URL"); preview = QPushButton("Abrir vista previa")
@@ -218,9 +256,16 @@ class GiftsView(QScrollArea):
         self.runtime.queue_changed.connect(self.set_queue); self.runtime.playback_changed.connect(self.set_playback)
         self.runtime.spotify_queue_changed.connect(self.set_spotify_queue)
         for widget in (self.animations_enabled, self.requests_enabled, self.allow_explicit, self.block_duplicates,
-                       self.only_connected, self.announce_tts): widget.toggled.connect(self.save_settings)
+                       self.only_connected, self.announce_tts, self.member_level_ups, self.member_ranking,
+                       self.member_sound, self.member_diagnostics): widget.toggled.connect(self.save_settings)
         for widget in (self.command,): widget.editingFinished.connect(self.save_settings)
         for widget in (self.max_pending, self.max_user, self.cooldown): widget.valueChanged.connect(self.save_settings)
+        for widget in (self.member_interval, self.member_rank_duration, self.member_scale, self.member_volume,
+                       self.member_level_duration): widget.valueChanged.connect(self.save_settings)
+        for widget in (self.member_ranking_mode, self.member_position): widget.currentTextChanged.connect(self.save_settings)
+        self.member_text.editingFinished.connect(self.save_settings)
+        self.test_level_up.clicked.connect(self.test_member_level_up); self.test_top3.clicked.connect(self.test_member_top3)
+        self.reset_members.clicked.connect(self.reset_member_history)
         self.create_tunnel.clicked.connect(self.create_https_tunnel)
         self.copy_tunnel.clicked.connect(lambda: QApplication.clipboard().setText(self.public_overlay_url.text()))
         self.stop_tunnel.clicked.connect(lambda: self.tunnel.stop() if self.tunnel else None)
@@ -253,12 +298,20 @@ class GiftsView(QScrollArea):
             self.runtime.reconnect()
         values = self.settings
         self.animations_enabled.setChecked(bool(values.get("animations_enabled", True)))
+        merged = {**MEMBER_DEFAULTS, **values}
+        self.member_level_ups.setChecked(bool(merged["member_level_ups_enabled"])); self.member_ranking.setChecked(bool(merged["member_ranking_enabled"]))
+        self.member_ranking_mode.setCurrentText(str(merged["member_ranking_mode"])); self.member_interval.setValue(max(1, int(merged["member_ranking_interval"]) // 60))
+        self.member_rank_duration.setValue(int(merged["member_ranking_duration"])); self.member_position.setCurrentText(str(merged["member_ranking_position"]))
+        self.member_scale.setValue(int(merged["member_ranking_scale"])); self.member_sound.setChecked(bool(merged["member_level_sound"]))
+        self.member_volume.setValue(int(merged["member_level_volume"])); self.member_level_duration.setValue(int(merged["member_level_duration"]))
+        self.member_text.setText(str(merged["member_level_text"])); self.member_diagnostics.setChecked(bool(merged["member_badge_diagnostics"]))
         self.requests_enabled.setChecked(bool(values.get("requests_enabled", False)))
         self.command.setText(str(values.get("command", "a/"))); self.max_pending.setValue(int(values.get("max_pending", 20)))
         self.max_user.setValue(int(values.get("max_per_user", 2))); self.cooldown.setValue(int(values.get("user_cooldown", 120)))
         self.allow_explicit.setChecked(bool(values.get("allow_explicit", False))); self.block_duplicates.setChecked(bool(values.get("block_duplicates", True)))
         self.only_connected.setChecked(bool(values.get("only_when_tiktok_connected", True))); self.announce_tts.setChecked(bool(values.get("announce_tts", False)))
         self.load_assignments()
+        self.refresh_member_table()
         self.set_spotify_state(self.spotify_state.text(), self.spotify_message.text())
 
     def set_available_width(self, width: int) -> None:
@@ -269,12 +322,56 @@ class GiftsView(QScrollArea):
                 "command": self.command.text().strip() or "a/", "max_pending": self.max_pending.value(), "max_per_user": self.max_user.value(),
                 "user_cooldown": self.cooldown.value(), "allow_explicit": self.allow_explicit.isChecked(),
                 "block_duplicates": self.block_duplicates.isChecked(), "only_when_tiktok_connected": self.only_connected.isChecked(),
-                "announce_tts": self.announce_tts.isChecked(), "assignments": self.settings.get("assignments", {})}
+                "announce_tts": self.announce_tts.isChecked(), "assignments": self.settings.get("assignments", {}),
+                "member_level_ups_enabled": self.member_level_ups.isChecked(), "member_ranking_enabled": self.member_ranking.isChecked(),
+                "member_ranking_mode": self.member_ranking_mode.currentText(), "member_ranking_interval": self.member_interval.value() * 60,
+                "member_ranking_duration": self.member_rank_duration.value(), "member_ranking_position": self.member_position.currentText(),
+                "member_ranking_scale": self.member_scale.value(), "member_level_sound": self.member_sound.isChecked(),
+                "member_level_volume": self.member_volume.value(), "member_level_duration": self.member_level_duration.value(),
+                "member_level_text": self.member_text.text().strip() or "¡FELICIDADES, @{user}!",
+                "member_badge_diagnostics": self.member_diagnostics.isChecked()}
 
     def save_settings(self, *_args) -> None:
         if self._loading:
             return
         self.settings.update(self.values()); self.settings_changed.emit(self.values())
+        self.member_manager.update_settings(self.values())
+
+    def refresh_member_table(self) -> None:
+        self.set_member_rows(self.member_history.top(100))
+
+    def set_member_rows(self, rows) -> None:
+        self.member_table.setRowCount(len(rows))
+        for row, member in enumerate(rows):
+            for column, value in enumerate((member.get("nickname") or member.get("unique_id", ""), member.get("current_level", 0), member.get("club_name", ""))):
+                self.member_table.setItem(row, column, QTableWidgetItem(str(value)))
+        self.member_summary.setText(f"Miembros detectados: {len(rows)}")
+
+    def test_member_level_up(self) -> None:
+        user, accepted = QInputDialog.getText(self, "Probar ascenso", "Usuario simulado", text="PandaFan")
+        if not accepted: return
+        avatar, accepted = QInputDialog.getText(self, "Probar ascenso", "Avatar simulado (URL opcional)")
+        if not accepted: return
+        previous, accepted = QInputDialog.getInt(self, "Probar ascenso", "Nivel anterior", 31, 1, 100)
+        if not accepted: return
+        new, accepted = QInputDialog.getInt(self, "Probar ascenso", "Nivel nuevo", previous + 1, previous + 1, 100)
+        if not accepted: return
+        record = {"user_id": "simulado", "unique_id": user, "nickname": user, "avatar": avatar.strip(),
+                  "previous_level": previous, "current_level": new}
+        sent = post_overlay_event(self.member_manager.level_event(record, test=True))
+        self.overlay_test_status.setText("Prueba de ascenso enviada al overlay." if sent else "El overlay rechazó la prueba de ascenso.")
+
+    def test_member_top3(self) -> None:
+        simulated = [{"user_id": f"test-{i}", "unique_id": name, "nickname": name, "avatar": "", "current_level": level, "first_seen": i}
+                     for i, (name, level) in enumerate((("PandaOro", 32), ("PandaPlata", 28), ("PandaBronce", 24)), 1)]
+        sent = post_overlay_event(self.member_manager.ranking_event(simulated, test=True))
+        self.overlay_test_status.setText("Prueba de Top 3 enviada al overlay." if sent else "El overlay rechazó la prueba de Top 3.")
+
+    def reset_member_history(self) -> None:
+        answer = QMessageBox.question(self, "Reiniciar historial", "¿Eliminar el historial local de niveles de miembros?",
+                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if answer == QMessageBox.StandardButton.Yes:
+            self.member_history.clear(); self.refresh_member_table(); self.overlay_test_status.setText("Historial de miembros reiniciado.")
 
     def save_client_id(self) -> None:
         self.store.save_client_id(self.client_id.text()); self.set_spotify_state("Desconectado", "ID guardado únicamente en este PC.")

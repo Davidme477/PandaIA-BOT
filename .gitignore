@@ -67,3 +67,4 @@ htmlcov/
 *.swp
 config/spotify_local.json
 config/telegram_local.json
+config/member_levels.json

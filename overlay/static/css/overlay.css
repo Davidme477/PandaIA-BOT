@@ -596,3 +596,21 @@ body {
         --ring-size: min(70vh, 460px);
     }
 }
+
+.member-stage,.ranking-stage{position:fixed;inset:0;display:none;pointer-events:none;background:transparent;overflow:hidden}
+.member-stage.visible,.ranking-stage.visible{display:flex}
+.member-stage{align-items:center;justify-content:center;font-family:Inter,"Segoe UI",sans-serif;color:white;text-align:center}
+.member-stage::before{content:"";position:absolute;inset:-25%;background:radial-gradient(circle,rgba(159,91,255,.58),transparent 52%);animation:member-pulse var(--member-duration,8s) ease both}
+.member-celebration{z-index:3;display:flex;flex-direction:column;align-items:center;gap:2vh;text-shadow:0 0 24px #7d3cff;animation:member-copy var(--member-duration,8s) ease both}
+.member-celebration h1{font-size:clamp(34px,5.5vw,92px);margin:0}.member-celebration h2{font-size:clamp(30px,4.5vw,78px);margin:0;color:#70e6ff}
+.member-badge{width:clamp(190px,25vw,430px);aspect-ratio:1;border-radius:50%;padding:14px;background:conic-gradient(#ffe56a,#a34fff,#4deaff,#ffe56a);display:grid;place-items:center;position:relative;box-shadow:0 0 60px #925cff}
+.member-badge img{width:100%;height:100%;object-fit:cover;border-radius:50%;background:radial-gradient(circle,#44336d,#111)}
+.member-badge strong{position:absolute;right:-5%;bottom:2%;width:32%;aspect-ratio:1;border-radius:50%;display:grid;place-items:center;background:#171126;border:5px solid #ffe56a;font-size:clamp(36px,6vw,92px)}
+.rocket{position:absolute;z-index:4;bottom:-25%;font-size:clamp(100px,16vw,270px);animation:rocket-flight var(--member-duration,8s) cubic-bezier(.3,.05,.65,1) both}.rocket i{display:block;width:35%;height:35vh;margin:-20% auto 0;background:linear-gradient(#fff,#48dfff,#a34fff,transparent);filter:blur(8px)}
+.member-burst{position:absolute;top:5%;width:12vw;aspect-ratio:1;border-radius:50%;box-shadow:0 0 80px 45px #fff,0 0 160px 100px #a34fff;animation:member-burst var(--member-duration,8s) ease both}
+.ranking-stage{align-items:flex-start;justify-content:center;transform:scale(var(--ranking-scale,1));transform-origin:top center}.ranking-stage.ranking-bottom{align-items:flex-end;transform-origin:bottom center}.ranking-wheels{display:flex;align-items:center;justify-content:center;gap:4vw;margin:5vh 3vw}.ranking-bottom .ranking-wheels{margin-bottom:5vh}
+.ranking-wheel{position:relative;width:clamp(150px,18vw,320px);aspect-ratio:1;border-radius:50%;display:grid;place-items:center;background:conic-gradient(#eee,#777,#fff,#777,#eee);box-shadow:0 0 35px #d8e1ee;animation:wheel-entry var(--ranking-duration,12s) ease both}
+.ranking-wheel.place-1{order:2;width:clamp(185px,22vw,390px);background:conic-gradient(#fff2a0,#b67a00,#ffe36b,#fff2a0);box-shadow:0 0 55px #ffd84d}.ranking-wheel.place-2{order:1}.ranking-wheel.place-3{order:3;background:conic-gradient(#ffd0a1,#8b461c,#df8a4b,#ffd0a1);box-shadow:0 0 35px #e27d43}
+.ranking-wheel img{width:72%;height:72%;border-radius:50%;object-fit:cover;background:#171126}.ranking-wheel b{position:absolute;top:-8%;font-size:clamp(26px,4vw,60px)}.ranking-wheel strong{position:absolute;font-size:clamp(34px,6vw,86px);text-shadow:0 0 14px #111}.ranking-wheel span{position:absolute;top:105%;width:130%;font:700 clamp(20px,3vw,45px) Inter,"Segoe UI";color:white;text-align:center;text-shadow:0 0 14px #6f2cff}
+@keyframes member-pulse{0%,100%{opacity:0}15%,80%{opacity:1;transform:scale(1.2)}}@keyframes member-copy{0%,10%,92%,100%{opacity:0;transform:scale(.7)}22%,82%{opacity:1;transform:scale(1)}}@keyframes rocket-flight{0%,38%{transform:translateY(0);opacity:0}42%{opacity:1}78%{transform:translateY(-135vh);opacity:1}82%,100%{transform:translateY(-150vh);opacity:0}}@keyframes member-burst{0%,76%,100%{opacity:0;transform:scale(.1)}83%{opacity:1;transform:scale(2)}}@keyframes wheel-entry{0%,100%{opacity:0;transform:translateY(-60px) rotate(-35deg) scale(.6)}12%,88%{opacity:1;transform:translateY(0) rotate(0) scale(1)}50%{transform:rotate(4deg) scale(1.03)}}
+@media (orientation:landscape){.member-celebration{transform:scale(.72)}.ranking-wheels{margin-top:3vh}.ranking-wheel{max-width:230px}.ranking-wheel.place-1{max-width:280px}}
