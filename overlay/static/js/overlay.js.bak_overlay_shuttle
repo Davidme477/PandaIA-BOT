@@ -149,105 +149,18 @@ function preloadImage(imageUrl) {
 
 function renderRanking(event) {
     rankingWheels.replaceChildren();
-
-    const members = Array.isArray(event.members)
-        ? event.members.slice(0, 3)
-        : [];
-
-    const medals = [
-        {place: 1, label: "TOP 1", tone: "gold"},
-        {place: 2, label: "TOP 2", tone: "silver"},
-        {place: 3, label: "TOP 3", tone: "bronze"}
-    ];
-
+    const members = Array.isArray(event.members) ? event.members.slice(0, 3) : [];
     members.forEach((member, index) => {
-        const medal = medals[index];
-
-        const card = document.createElement("article");
-        card.className = `ranking-crown place-${medal.place} crown-${medal.tone}`;
-
-        const scene = document.createElement("div");
-        scene.className = "crown-scene";
-
-        const rotor = document.createElement("div");
-        rotor.className = "crown-rotor";
-        rotor.style.animationDelay = `${index * 0.55}s`;
-
-        const levelFace = document.createElement("div");
-        levelFace.className = "crown-face crown-level-face";
-
-        const levelCrown = document.createElement("div");
-        levelCrown.className = "crown-shape";
-
-        const place = document.createElement("b");
-        place.className = "crown-place";
-        place.textContent = medal.label;
-
-        const levelLabel = document.createElement("small");
-        levelLabel.textContent = "NIVEL";
-
-        const level = document.createElement("strong");
-        level.textContent = String(member.current_level || 0);
-
-        levelFace.append(levelCrown, place, levelLabel, level);
-
-        const avatarFace = document.createElement("div");
-        avatarFace.className = "crown-face crown-avatar-face";
-
-        const avatarCrown = document.createElement("div");
-        avatarCrown.className = "crown-shape";
-
-        const avatarFrame = document.createElement("div");
-        avatarFrame.className = "crown-avatar-frame";
-
-        const image = document.createElement("img");
-        image.alt = "";
-        image.decoding = "async";
-        if (member.avatar) {
-            image.src = member.avatar;
-        }
-
-        const avatarFallback = document.createElement("span");
-        avatarFallback.className = "avatar-fallback";
-        avatarFallback.textContent = String(
-            member.nickname || member.unique_id || "M"
-        ).trim().charAt(0).toUpperCase() || "M";
-
-        image.addEventListener("load", () => {
-            avatarFallback.style.display = "none";
-        });
-
-        avatarFrame.append(image, avatarFallback);
-
-        const avatarPlace = document.createElement("b");
-        avatarPlace.className = "crown-place";
-        avatarPlace.textContent = medal.label;
-
-        avatarFace.append(avatarCrown, avatarFrame, avatarPlace);
-        rotor.append(levelFace, avatarFace);
-        scene.append(rotor);
-
-        const name = document.createElement("span");
-        name.className = "crown-member-name";
-        name.textContent = member.nickname || member.unique_id || "Miembro";
-
-        card.append(scene, name);
-        rankingWheels.append(card);
+        const wheel = document.createElement("article"); wheel.className = `ranking-wheel place-${index + 1}`;
+        const image = document.createElement("img"); image.alt = ""; if (member.avatar) image.src = member.avatar;
+        const place = document.createElement("b"); place.textContent = `#${index + 1}`;
+        const level = document.createElement("strong"); level.textContent = String(member.current_level || 0);
+        const name = document.createElement("span"); name.textContent = member.nickname || member.unique_id || "Miembro";
+        wheel.append(place, image, level, name); rankingWheels.append(wheel);
     });
-
-    rankingStage.style.setProperty(
-        "--ranking-scale",
-        `${Math.max(50, Math.min(150, Number(event.scale || 100))) / 100}`
-    );
-
-    rankingStage.classList.add(
-        String(event.position).toLowerCase().includes("inferior")
-            ? "ranking-bottom"
-            : "ranking-top"
-    );
-
-    rankingStage.setAttribute("aria-hidden", "false");
-    restartAnimation(rankingStage, "visible");
+    rankingStage.style.setProperty("--ranking-scale", `${Math.max(50, Math.min(150, Number(event.scale || 100))) / 100}`);
+    rankingStage.classList.add(String(event.position).toLowerCase().includes("inferior") ? "ranking-bottom" : "ranking-top");
+    rankingStage.setAttribute("aria-hidden", "false"); restartAnimation(rankingStage, "visible");
 }
 
 
@@ -314,7 +227,7 @@ async function playEvent(event) {
             playLevelSound(event);
             const user = getSenderName(event).replace(/^@/, "");
             memberTitle.textContent = String(event.message || "¡FELICIDADES, @{user}!").replace("{user}", user);
-            memberSubtitle.textContent = `ALCANZASTE EL NIVEL DE MIEMBRO ${Number(event.new_level)}`;
+            memberSubtitle.textContent = `¡SUBISTE AL NIVEL ${Number(event.new_level)}!`;
             memberLevel.textContent = String(Number(event.new_level));
             const avatar = String(event.avatar_url || ""); if (avatar) memberAvatar.src = avatar;
             memberStage.setAttribute("aria-hidden", "false"); restartAnimation(memberStage, "visible");

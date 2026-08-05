@@ -314,7 +314,7 @@ async function playEvent(event) {
             playLevelSound(event);
             const user = getSenderName(event).replace(/^@/, "");
             memberTitle.textContent = String(event.message || "¡FELICIDADES, @{user}!").replace("{user}", user);
-            memberSubtitle.textContent = `ALCANZASTE EL NIVEL DE MIEMBRO ${Number(event.new_level)}`;
+            memberSubtitle.textContent = `¡SUBISTE AL NIVEL ${Number(event.new_level)}!`;
             memberLevel.textContent = String(Number(event.new_level));
             const avatar = String(event.avatar_url || ""); if (avatar) memberAvatar.src = avatar;
             memberStage.setAttribute("aria-hidden", "false"); restartAnimation(memberStage, "visible");

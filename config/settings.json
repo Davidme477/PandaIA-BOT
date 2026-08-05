@@ -22,5 +22,30 @@
         "style": "Clara y expresiva",
         "speed": 1.0,
         "volume": 1.0
+    },
+    "gifts": {
+        "requests_enabled": false,
+        "command": "a/",
+        "max_pending": 20,
+        "max_per_user": 2,
+        "user_cooldown": 120,
+        "allow_explicit": false,
+        "block_duplicates": true,
+        "only_when_tiktok_connected": true,
+        "announce_tts": false,
+        "animations_enabled": true,
+        "assignments": {},
+        "member_level_ups_enabled": true,
+        "member_ranking_enabled": true,
+        "member_ranking_mode": "Periódicamente",
+        "member_ranking_interval": 600,
+        "member_ranking_duration": 12,
+        "member_ranking_position": "Superior",
+        "member_ranking_scale": 100,
+        "member_level_duration": 8,
+        "member_level_sound": true,
+        "member_level_volume": 50,
+        "member_level_text": "¡FELICIDADES, @{user}!",
+        "member_badge_diagnostics": true
     }
 }
