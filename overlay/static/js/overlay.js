@@ -92,7 +92,7 @@ function getGiftName(event) {
 }
 
 
-function clearAnimation() {
+function clearAnimation({keepRanking = false} = {}) {
     giftContainer.classList.remove("visible");
     flashEffect.classList.remove("active");
     ambientLight.classList.remove("active");
@@ -107,9 +107,21 @@ function clearAnimation() {
 
     giftSender.textContent = "";
     giftName.textContent = "";
-    memberStage.classList.remove("visible"); memberStage.setAttribute("aria-hidden", "true");
-    rankingStage.classList.remove("visible", "ranking-top", "ranking-bottom"); rankingStage.setAttribute("aria-hidden", "true");
-    memberAvatar.removeAttribute("src"); rankingWheels.replaceChildren();
+
+    memberStage.classList.remove("visible");
+    memberStage.setAttribute("aria-hidden", "true");
+    memberAvatar.removeAttribute("src");
+
+    if (!keepRanking) {
+        rankingStage.classList.remove(
+            "visible",
+            "ranking-top",
+            "ranking-bottom",
+            "ranking-persistent"
+        );
+        rankingStage.setAttribute("aria-hidden", "true");
+        rankingWheels.replaceChildren();
+    }
 }
 
 function playLevelSound(event) {
@@ -235,9 +247,23 @@ function renderRanking(event) {
         rankingWheels.append(card);
     });
 
+    const isPersistent = String(event.mode || "")
+        .toLowerCase()
+        .includes("siempre");
+
+    rankingStage.classList.toggle(
+        "ranking-persistent",
+        isPersistent
+    );
+
     rankingStage.style.setProperty(
         "--ranking-scale",
         `${Math.max(50, Math.min(150, Number(event.scale || 100))) / 100}`
+    );
+
+    rankingStage.classList.remove(
+        "ranking-top",
+        "ranking-bottom"
     );
 
     rankingStage.classList.add(
@@ -319,10 +345,23 @@ async function playEvent(event) {
             const avatar = String(event.avatar_url || ""); if (avatar) memberAvatar.src = avatar;
             memberStage.setAttribute("aria-hidden", "false"); restartAnimation(memberStage, "visible");
         } else {
-            if (String(event.mode).toLowerCase().includes("siempre")) persistentRankingEvent = event;
+            const isPersistentRanking =
+                String(event.mode || "")
+                    .toLowerCase()
+                    .includes("siempre");
+
+            if (isPersistentRanking) {
+                persistentRankingEvent = event;
+            }
+
             renderRanking(event);
+
+            if (isPersistentRanking) {
+                return;
+            }
         }
-        await sleep(event.type === "member_level_leaderboard" && persistentRankingEvent === event ? 250 : duration);
+
+        await sleep(duration);
     } catch (error) {
         console.error(
             "No se pudo reproducir el regalo:",
@@ -330,10 +369,19 @@ async function playEvent(event) {
             event
         );
     } finally {
-        clearAnimation();
-        if (persistentRankingEvent) renderRanking(persistentRankingEvent);
+        const permanentRankingWasShown =
+            event.type === "member_level_leaderboard" &&
+            persistentRankingEvent === event;
 
-        await sleep(PAUSE_BETWEEN_EVENTS_MS);
+        if (!permanentRankingWasShown) {
+            clearAnimation();
+
+            if (persistentRankingEvent) {
+                renderRanking(persistentRankingEvent);
+            }
+
+            await sleep(PAUSE_BETWEEN_EVENTS_MS);
+        }
 
         animationRunning = false;
     }

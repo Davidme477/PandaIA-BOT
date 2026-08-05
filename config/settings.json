@@ -7,11 +7,16 @@
         "model": "chico-ia:latest",
         "personality": "Entusiasta",
         "language": "Español",
-        "respond_comments": true,
+        "custom_personality_name": "Mi personalidad",
+        "custom_personality_prompt": "",
+        "respond_comments": false,
+        "command_only_mode": true,
+        "chat_command": "/",
         "read_gifts": true,
-        "use_memory": true,
+        "use_memory": false,
         "automatic_responses": true,
-        "autonomous_mode": true
+        "autonomous_mode": false,
+        "response_length": "Corta"
     },
     "tts": {
         "engine": "kokoro",
@@ -32,7 +37,7 @@
         "allow_explicit": false,
         "block_duplicates": true,
         "only_when_tiktok_connected": true,
-        "announce_tts": false,
+        "announce_tts": true,
         "animations_enabled": true,
         "assignments": {},
         "member_level_ups_enabled": true,
@@ -47,5 +52,12 @@
         "member_level_volume": 50,
         "member_level_text": "¡FELICIDADES, @{user}!",
         "member_badge_diagnostics": true
+    },
+    "live_watchdog": {
+        "enabled": true,
+        "process_hint": "TikTok Live Studio",
+        "attach_screenshot": false,
+        "repeat_interval": 60,
+        "repeat_duration": 240
     }
 }

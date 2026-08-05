@@ -1082,3 +1082,339 @@ body {
         width: 9vw;
     }
 }
+
+/* ==========================================================
+   AJUSTE FINAL TIKTOK 9:16
+   Regalos: zona central izquierda
+   Top 3: columna derecha
+   Subida de nivel: pantalla completa y franja fina naranja
+   ========================================================== */
+
+@media (orientation: portrait) {
+    html,
+    body,
+    #overlay-root {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+    }
+
+    /* ZONA DE REGALOS: evita invadir la columna derecha del Top 3. */
+    #gift-stage {
+        position: absolute;
+        top: 18%;
+        right: 22%;
+        bottom: 28%;
+        left: 4%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+    }
+
+    :root {
+        --gift-size: min(58vw, 39vh);
+        --ring-size: min(70vw, 48vh);
+    }
+
+    .gift-container {
+        max-width: 100%;
+        max-height: 100%;
+    }
+
+    #gift-info {
+        min-width: min(62vw, 360px);
+        max-width: 68vw;
+        padding: 8px 16px 10px;
+    }
+
+    /* SUBIDA DE NIVEL: conserva el efecto a pantalla completa. */
+    .member-stage {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+    }
+
+    .member-stage.visible {
+        display: flex;
+    }
+
+    .member-celebration {
+        position: absolute;
+        z-index: 8;
+        left: 50%;
+        top: 42%;
+        width: 88vw;
+        max-width: 620px;
+        max-height: 72vh;
+        transform: translate(-50%, -50%);
+        gap: clamp(6px, 1vh, 13px);
+    }
+
+    .level-up-label {
+        max-width: 76vw;
+        padding: .26em .78em;
+        font-size: clamp(9px, 2.2vw, 17px);
+        letter-spacing: .14em;
+        white-space: nowrap;
+    }
+
+    .member-celebration h1 {
+        max-width: 82vw;
+        margin: 0;
+        font-size: clamp(22px, 5.4vw, 44px);
+        line-height: 1.03;
+    }
+
+    .member-badge {
+        width: clamp(135px, 34vw, 255px);
+        max-height: 29vh;
+        padding: 8px;
+    }
+
+    .member-badge strong {
+        font-size: clamp(27px, 7.5vw, 57px);
+        border-width: 3px;
+    }
+
+    /* Franja fina tipo TikTok. Solo esta parte es naranja. */
+    .member-celebration h2 {
+        position: relative;
+        width: min(84vw, 610px);
+        min-height: 42px;
+        margin: 4px 0 0;
+        padding: 7px 28px 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-top: 2px solid #ffad22;
+        border-bottom: 2px solid #ff7200;
+        border-radius: 2px;
+        clip-path: none;
+        background: linear-gradient(
+            90deg,
+            transparent 0%,
+            rgba(255, 103, 0, .16) 10%,
+            rgba(255, 126, 0, .52) 50%,
+            rgba(255, 103, 0, .16) 90%,
+            transparent 100%
+        );
+        color: #fff7e8;
+        -webkit-text-fill-color: #fff7e8;
+        font-size: clamp(14px, 3.25vw, 28px);
+        font-weight: 650;
+        line-height: 1;
+        letter-spacing: .01em;
+        white-space: nowrap;
+        text-shadow:
+            0 1px 0 rgba(65, 20, 0, .95),
+            0 0 8px rgba(255, 128, 0, .95);
+        box-shadow:
+            0 0 9px rgba(255, 126, 0, .8),
+            0 0 22px rgba(255, 79, 0, .38);
+    }
+
+    .member-celebration h2::before,
+    .member-celebration h2::after {
+        width: min(8vw, 54px);
+        height: 3px;
+    }
+
+    .shuttle {
+        left: 50%;
+        bottom: -29vh;
+        width: clamp(86px, 22vw, 165px);
+        height: clamp(160px, 40vw, 300px);
+    }
+
+    .energy-ring {
+        width: min(90vw, 620px);
+    }
+
+    .ring-2 {
+        width: min(66vw, 440px);
+    }
+
+    /* TOP 3: columna angosta a la derecha, dentro de la zona roja. */
+    .ranking-stage,
+    .ranking-stage.ranking-bottom {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        padding: 5vh 1vw 5vh 0;
+        align-items: center;
+        justify-content: flex-end;
+        overflow: hidden;
+        transform: none;
+    }
+
+    .ranking-wheels,
+    .ranking-bottom .ranking-wheels {
+        width: 20vw;
+        max-width: 150px;
+        height: 90vh;
+        max-height: 90vh;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: clamp(5px, 1vh, 10px);
+        perspective: 900px;
+        transform: scale(var(--ranking-scale, 1));
+        transform-origin: center right;
+    }
+
+    .ranking-crown,
+    .ranking-crown.place-1,
+    .ranking-crown.place-2,
+    .ranking-crown.place-3 {
+        width: 18vw;
+        max-width: 134px;
+        margin: 0;
+        transform: none;
+        flex: 0 1 auto;
+    }
+
+    .ranking-crown.place-1 {
+        width: 19.5vw;
+        max-width: 145px;
+        order: 1;
+    }
+
+    .ranking-crown.place-2 {
+        order: 2;
+    }
+
+    .ranking-crown.place-3 {
+        order: 3;
+    }
+
+    .crown-scene {
+        width: 100%;
+        aspect-ratio: .82;
+    }
+
+    .crown-face {
+        border-width: 2px;
+        border-radius: 24% 24% 34% 34% / 18% 18% 24% 24%;
+    }
+
+    .crown-shape {
+        top: -12%;
+        height: 39%;
+    }
+
+    .crown-place {
+        margin-top: 10%;
+        font-size: clamp(8px, 1.8vw, 14px);
+    }
+
+    .crown-level-face small {
+        margin-top: 0;
+        font-size: clamp(6px, 1.1vw, 10px);
+        letter-spacing: .1em;
+    }
+
+    .crown-level-face strong {
+        font-size: clamp(27px, 6.4vw, 49px);
+    }
+
+    .crown-avatar-frame {
+        width: 56%;
+        margin-top: 10%;
+        border-width: 3px;
+        box-shadow:
+            0 0 0 3px var(--crown-dark),
+            0 0 14px var(--crown-glow);
+    }
+
+    .avatar-fallback {
+        font-size: clamp(22px, 5vw, 38px);
+    }
+
+    .crown-avatar-face .crown-place {
+        margin-top: .25em;
+    }
+
+    .crown-member-name {
+        width: 102%;
+        margin-left: -1%;
+        margin-top: .16em;
+        font-size: clamp(8px, 1.75vw, 13px);
+        line-height: 1;
+    }
+}
+
+/* Medidas muy cercanas a 720x1280 y 1080x1920. */
+@media (orientation: portrait) and (min-aspect-ratio: 9/17) and (max-aspect-ratio: 10/16) {
+    #gift-stage {
+        top: 17%;
+        right: 21%;
+        bottom: 27%;
+        left: 3%;
+    }
+
+    .member-celebration {
+        top: 41%;
+    }
+
+    .ranking-wheels,
+    .ranking-bottom .ranking-wheels {
+        width: 19vw;
+    }
+
+    .ranking-crown,
+    .ranking-crown.place-2,
+    .ranking-crown.place-3 {
+        width: 17vw;
+    }
+
+    .ranking-crown.place-1 {
+        width: 18.5vw;
+    }
+}
+
+/* ==========================================================
+   PANDAIA — TOP 3 PERMANENTE COMPLETO
+   ========================================================== */
+
+.ranking-stage.ranking-persistent {
+    display: flex;
+    opacity: 1;
+    visibility: visible;
+}
+
+.ranking-stage.ranking-persistent .ranking-crown {
+    opacity: 1 !important;
+    visibility: visible !important;
+    animation:
+        pandaia-ranking-entry-persistent
+        700ms
+        ease-out
+        both !important;
+}
+
+.ranking-stage.ranking-persistent .crown-rotor {
+    animation-iteration-count: infinite;
+}
+
+@keyframes pandaia-ranking-entry-persistent {
+    from {
+        opacity: 0;
+        filter: blur(10px);
+        transform: translateY(-18px) scale(.92);
+    }
+
+    to {
+        opacity: 1;
+        filter: blur(0);
+        transform: translateY(0) scale(1);
+    }
+}
