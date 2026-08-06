@@ -115,8 +115,7 @@ class TikTokService:
         self.live_state = LiveState()
         self.like_ranking = LikeRankingManager()
 
-        self._timer_task:
-            asyncio.Task[None] | None = None
+        self._timer_task: asyncio.Task[None] | None = None
         self._live_connected = False
 
         if not self.username.startswith("@"):
