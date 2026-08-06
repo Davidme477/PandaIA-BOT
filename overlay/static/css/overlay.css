@@ -2025,3 +2025,56 @@ body {
         top: 1vh;
     }
 }
+
+/* ==========================================================
+   PANDAIA — NOMBRE TOP MIEMBROS SIN CAMBIAR TAMAÑOS
+   ========================================================== */
+
+/* Mantiene intactos el círculo, la corona y los márgenes. */
+.member-ranking-stage .ranking-crown {
+    overflow: visible !important;
+}
+
+/* Muestra el nombre justo debajo del indicador del nivel. */
+.member-ranking-stage .crown-member-name {
+    position: relative !important;
+    z-index: 40 !important;
+
+    display: block !important;
+    width: 118% !important;
+    max-width: 118% !important;
+    min-height: 0 !important;
+
+    margin: 1px 0 0 !important;
+    padding: 1px 2px !important;
+
+    overflow: visible !important;
+    color: #ffffff !important;
+
+    font-size: clamp(6px, 1.05vw, 9px) !important;
+    font-weight: 800 !important;
+    line-height: 1 !important;
+
+    text-align: center !important;
+    text-overflow: clip !important;
+    white-space: nowrap !important;
+
+    transform: none !important;
+
+    border-radius: 4px;
+    background: rgba(0, 0, 0, .72);
+
+    text-shadow:
+        0 1px 2px #000,
+        0 0 4px #000;
+}
+
+/* Impide que el nombre quede detrás de la siguiente corona. */
+.member-ranking-stage .ranking-wheels {
+    overflow: visible !important;
+}
+
+.member-ranking-stage .ranking-metric-badge {
+    position: relative !important;
+    z-index: 35 !important;
+}
