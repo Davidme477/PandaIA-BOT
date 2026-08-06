@@ -29,7 +29,7 @@
         "volume": 1.0
     },
     "gifts": {
-        "requests_enabled": false,
+        "requests_enabled": true,
         "command": "a/",
         "max_pending": 20,
         "max_per_user": 2,
@@ -42,13 +42,13 @@
         "assignments": {},
         "member_level_ups_enabled": true,
         "member_ranking_enabled": true,
-        "member_ranking_mode": "Periódicamente",
+        "member_ranking_mode": "Siempre visible",
         "member_ranking_interval": 600,
-        "member_ranking_duration": 12,
+        "member_ranking_duration": 18,
         "member_ranking_position": "Superior",
         "member_ranking_scale": 100,
         "member_level_duration": 8,
-        "member_level_sound": true,
+        "member_level_sound": false,
         "member_level_volume": 50,
         "member_level_text": "¡FELICIDADES, @{user}!",
         "member_badge_diagnostics": true

@@ -1382,39 +1382,82 @@ body {
 }
 
 /* ==========================================================
-   PANDAIA — TOP 3 PERMANENTE COMPLETO
+   PANDAIA — SECUENCIA NIVEL 3 SEGUNDOS Y TOP FIJO
    ========================================================== */
 
-.ranking-stage.ranking-persistent {
-    display: flex;
-    opacity: 1;
-    visibility: visible;
+/* FASE 1: solo aparece la franja de nivel durante 3 segundos. */
+.member-stage.member-notice-phase::before,
+.member-stage.member-notice-phase .shuttle-space,
+.member-stage.member-notice-phase .member-particles,
+.member-stage.member-notice-phase .member-burst,
+.member-stage.member-notice-phase .shuttle,
+.member-stage.member-notice-phase .member-celebration h1,
+.member-stage.member-notice-phase .member-badge {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    animation: none !important;
 }
 
+.member-stage.member-notice-phase .member-celebration {
+    position: absolute;
+    z-index: 20;
+    left: 50%;
+    top: 50%;
+    width: 100%;
+    max-width: none;
+    gap: 0;
+    opacity: 1 !important;
+    transform: translate(-50%, -50%) !important;
+    animation: none !important;
+}
+
+.member-stage.member-notice-phase .member-celebration h2 {
+    display: flex !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    transform: none !important;
+    animation: pandaia-level-notice-three-seconds 3000ms ease both !important;
+}
+
+@keyframes pandaia-level-notice-three-seconds {
+    0% {
+        opacity: 0;
+        transform: scaleX(.25);
+        filter: blur(7px);
+    }
+
+    12% {
+        opacity: 1;
+        transform: scaleX(1);
+        filter: blur(0);
+    }
+
+    88% {
+        opacity: 1;
+        transform: scaleX(1);
+        filter: blur(0);
+    }
+
+    100% {
+        opacity: 0;
+        transform: scaleX(.86);
+        filter: blur(4px);
+    }
+}
+
+/* FASE 2: el aviso ya terminó y empieza la nave. */
+.member-stage.member-shuttle-phase .member-celebration h2 {
+    display: none !important;
+}
+
+/* El Top 3 permanente no reproduce una animación de tarjeta en bucle.
+   Solo el rotor interno continúa alternando entre nivel y fotografía. */
 .ranking-stage.ranking-persistent .ranking-crown {
     opacity: 1 !important;
     visibility: visible !important;
-    animation:
-        pandaia-ranking-entry-persistent
-        700ms
-        ease-out
-        both !important;
+    animation: none !important;
 }
 
 .ranking-stage.ranking-persistent .crown-rotor {
     animation-iteration-count: infinite;
-}
-
-@keyframes pandaia-ranking-entry-persistent {
-    from {
-        opacity: 0;
-        filter: blur(10px);
-        transform: translateY(-18px) scale(.92);
-    }
-
-    to {
-        opacity: 1;
-        filter: blur(0);
-        transform: translateY(0) scale(1);
-    }
 }

@@ -1,6 +1,7 @@
 const POLL_INTERVAL_MS = 1000;
 const ANIMATION_DURATION_MS = 4200;
 const PAUSE_BETWEEN_EVENTS_MS = 250;
+const MEMBER_NOTICE_DURATION_MS = 3000;
 
 const giftContainer = document.getElementById("gift-container");
 const giftImage = document.getElementById("gift-image");
@@ -18,6 +19,7 @@ const rankingWheels = document.getElementById("ranking-wheels");
 
 let animationRunning = false;
 let persistentRankingEvent = null;
+let persistentRankingFingerprint = "";
 let pollingEnabled = true;
 const overlayClientId = sessionStorage.getItem("pandaia-overlay-client-id") ||
     (window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : `overlay-${Date.now()}-${Math.random()}`);
@@ -92,7 +94,26 @@ function getGiftName(event) {
 }
 
 
-function clearAnimation({keepRanking = false} = {}) {
+function getRankingFingerprint(event) {
+    const members = Array.isArray(event.members)
+        ? event.members.slice(0, 3).map((member) => ({
+            unique_id: String(member.unique_id || ""),
+            nickname: String(member.nickname || ""),
+            current_level: Number(member.current_level || 0),
+            avatar: String(member.avatar || "")
+        }))
+        : [];
+
+    return JSON.stringify({
+        mode: String(event.mode || ""),
+        position: String(event.position || ""),
+        scale: Number(event.scale || 100),
+        members
+    });
+}
+
+
+function clearAnimation() {
     giftContainer.classList.remove("visible");
     flashEffect.classList.remove("active");
     ambientLight.classList.remove("active");
@@ -107,21 +128,9 @@ function clearAnimation({keepRanking = false} = {}) {
 
     giftSender.textContent = "";
     giftName.textContent = "";
-
-    memberStage.classList.remove("visible");
-    memberStage.setAttribute("aria-hidden", "true");
-    memberAvatar.removeAttribute("src");
-
-    if (!keepRanking) {
-        rankingStage.classList.remove(
-            "visible",
-            "ranking-top",
-            "ranking-bottom",
-            "ranking-persistent"
-        );
-        rankingStage.setAttribute("aria-hidden", "true");
-        rankingWheels.replaceChildren();
-    }
+    memberStage.classList.remove("visible"); memberStage.setAttribute("aria-hidden", "true");
+    rankingStage.classList.remove("visible", "ranking-top", "ranking-bottom"); rankingStage.setAttribute("aria-hidden", "true");
+    memberAvatar.removeAttribute("src"); rankingWheels.replaceChildren();
 }
 
 function playLevelSound(event) {
@@ -247,23 +256,9 @@ function renderRanking(event) {
         rankingWheels.append(card);
     });
 
-    const isPersistent = String(event.mode || "")
-        .toLowerCase()
-        .includes("siempre");
-
-    rankingStage.classList.toggle(
-        "ranking-persistent",
-        isPersistent
-    );
-
     rankingStage.style.setProperty(
         "--ranking-scale",
         `${Math.max(50, Math.min(150, Number(event.scale || 100))) / 100}`
-    );
-
-    rankingStage.classList.remove(
-        "ranking-top",
-        "ranking-bottom"
     );
 
     rankingStage.classList.add(
@@ -324,47 +319,108 @@ async function playEvent(event) {
         return;
     }
 
-    if (!["gift", "member_level_up", "member_level_leaderboard"].includes(event.type)) return;
-    if (event.duration_ms) document.documentElement.style.setProperty("--animation-duration", `${Number(event.duration_ms)}ms`);
+    if (!["gift", "member_level_up", "member_level_leaderboard"].includes(event.type)) {
+        return;
+    }
+
+    const isPersistentRanking =
+        event.type === "member_level_leaderboard" &&
+        String(event.mode || "").toLowerCase().includes("siempre");
+
+    const incomingRankingFingerprint = isPersistentRanking
+        ? getRankingFingerprint(event)
+        : "";
+
+    /* Evita reconstruir y reiniciar el Top 3 cuando llega exactamente
+       el mismo ranking permanente otra vez. */
+    if (
+        isPersistentRanking &&
+        persistentRankingFingerprint &&
+        incomingRankingFingerprint === persistentRankingFingerprint &&
+        rankingStage.classList.contains("visible")
+    ) {
+        return;
+    }
+
+    if (event.duration_ms) {
+        document.documentElement.style.setProperty(
+            "--animation-duration",
+            `${Number(event.duration_ms)}ms`
+        );
+    }
+
     animationRunning = true;
 
     try {
         clearAnimation();
 
-        const duration = Math.max(1000, Number(event.duration_ms || (event.type === "gift" ? ANIMATION_DURATION_MS : 8000)));
-        document.documentElement.style.setProperty("--member-duration", `${duration}ms`);
-        document.documentElement.style.setProperty("--ranking-duration", `${duration}ms`);
-        if (event.type === "gift") {
-            await prepareGift(event); startAnimation();
-        } else if (event.type === "member_level_up") {
-            playLevelSound(event);
-            const user = getSenderName(event).replace(/^@/, "");
-            memberTitle.textContent = String(event.message || "¡FELICIDADES, @{user}!").replace("{user}", user);
-            memberSubtitle.textContent = `ALCANZASTE EL NIVEL DE MIEMBRO ${Number(event.new_level)}`;
-            memberLevel.textContent = String(Number(event.new_level));
-            const avatar = String(event.avatar_url || ""); if (avatar) memberAvatar.src = avatar;
-            memberStage.setAttribute("aria-hidden", "false"); restartAnimation(memberStage, "visible");
-        } else {
-            const isPersistentRanking =
-                String(event.mode || "")
-                    .toLowerCase()
-                    .includes("siempre");
+        const duration = Math.max(
+            1000,
+            Number(
+                event.duration_ms ||
+                (event.type === "gift" ? ANIMATION_DURATION_MS : 8000)
+            )
+        );
 
+        document.documentElement.style.setProperty(
+            "--member-duration",
+            `${duration}ms`
+        );
+        document.documentElement.style.setProperty(
+            "--ranking-duration",
+            `${duration}ms`
+        );
+
+        if (event.type === "gift") {
+            await prepareGift(event);
+            startAnimation();
+            await sleep(duration);
+        } else if (event.type === "member_level_up") {
+            const user = getSenderName(event).replace(/^@/, "");
+
+            memberTitle.textContent = String(
+                event.message || "¡FELICIDADES, @{user}!"
+            ).replace("{user}", user);
+
+            memberSubtitle.textContent =
+                `ALCANZASTE EL NIVEL DE MIEMBRO ${Number(event.new_level)}`;
+
+            memberLevel.textContent = String(Number(event.new_level));
+
+            const avatar = String(event.avatar_url || "");
+            if (avatar) {
+                memberAvatar.src = avatar;
+            }
+
+            /* Fase 1: aviso naranja fijo durante 3 segundos. */
+            memberStage.classList.add("member-notice-phase");
+            memberStage.setAttribute("aria-hidden", "false");
+            restartAnimation(memberStage, "visible");
+
+            await sleep(MEMBER_NOTICE_DURATION_MS);
+
+            /* Fase 2: se oculta el aviso y recién empieza la nave. */
+            memberStage.classList.remove("member-notice-phase");
+            memberStage.classList.add("member-shuttle-phase");
+            playLevelSound(event);
+            restartAnimation(memberStage, "visible");
+
+            await sleep(duration);
+        } else {
             if (isPersistentRanking) {
                 persistentRankingEvent = event;
+                persistentRankingFingerprint = incomingRankingFingerprint;
             }
 
             renderRanking(event);
 
-            if (isPersistentRanking) {
-                return;
+            if (!isPersistentRanking) {
+                await sleep(duration);
             }
         }
-
-        await sleep(duration);
     } catch (error) {
         console.error(
-            "No se pudo reproducir el regalo:",
+            "No se pudo reproducir el evento del overlay:",
             error,
             event
         );
@@ -386,7 +442,6 @@ async function playEvent(event) {
         animationRunning = false;
     }
 }
-
 
 async function requestNextEvent() {
     if (
