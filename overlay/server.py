@@ -37,45 +37,113 @@ client_cursors: dict[str, int] = {}
 client_seen: dict[str, set[int]] = {}
 event_sequence = 0
 queue_lock = Lock()
-ACCESS_TOKEN = os.environ.get("PANDAIA_OVERLAY_ACCESS_TOKEN", "")
+ACCESS_TOKEN = os.environ.get(
+    "PANDAIA_OVERLAY_ACCESS_TOKEN",
+    "",
+)
 logging.getLogger("werkzeug").disabled = True
 
 
 def is_external_request() -> bool:
     host = request.host.split(":", 1)[0].casefold()
-    return bool(request.headers.get("CF-Connecting-IP")) or host not in {"127.0.0.1", "localhost"}
+
+    return (
+        bool(request.headers.get("CF-Connecting-IP"))
+        or host not in {"127.0.0.1", "localhost"}
+    )
 
 
 def valid_external_access() -> bool:
     supplied = str(request.args.get("access", ""))
-    return bool(ACCESS_TOKEN and supplied and hmac.compare_digest(supplied, ACCESS_TOKEN))
+
+    return bool(
+        ACCESS_TOKEN
+        and supplied
+        and hmac.compare_digest(
+            supplied,
+            ACCESS_TOKEN,
+        )
+    )
 
 
 @app.before_request
 def protect_overlay():
-    protected_get = request.path == "/overlay" or request.path == "/api/events/next" or request.path.startswith("/gift-assets/")
-    if request.path == "/health" and request.args.get("access") is not None and not valid_external_access():
-        return jsonify({"ok": False, "error": "Token de instancia incorrecto."}), 403
-    if request.method == "GET" and protected_get and is_external_request() and not valid_external_access():
-        return jsonify({"ok": False, "error": "Acceso no autorizado."}), 403
-    if request.method == "POST" and request.path in {"/api/events", "/api/test/gift", "/api/events/clear"} and is_external_request():
-        return jsonify({"ok": False, "error": "Publicación externa no permitida."}), 403
+    protected_get = (
+        request.path == "/overlay"
+        or request.path == "/api/events/next"
+        or request.path.startswith("/gift-assets/")
+    )
+
+    if (
+        request.path == "/health"
+        and request.args.get("access") is not None
+        and not valid_external_access()
+    ):
+        return jsonify(
+            {
+                "ok": False,
+                "error": "Token de instancia incorrecto.",
+            }
+        ), 403
+
+    if (
+        request.method == "GET"
+        and protected_get
+        and is_external_request()
+        and not valid_external_access()
+    ):
+        return jsonify(
+            {
+                "ok": False,
+                "error": "Acceso no autorizado.",
+            }
+        ), 403
+
+    if (
+        request.method == "POST"
+        and request.path
+        in {
+            "/api/events",
+            "/api/test/gift",
+            "/api/events/clear",
+        }
+        and is_external_request()
+    ):
+        return jsonify(
+            {
+                "ok": False,
+                "error": "Publicación externa no permitida.",
+            }
+        ), 403
+
     return None
 
 
 @app.after_request
 def disable_overlay_cache(response):
-    if request.path == "/overlay" or request.path == "/api/events/next" or request.path.startswith("/gift-assets/"):
-        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-        response.headers["Pragma"] = "no-cache"; response.headers["Expires"] = "0"
+    if (
+        request.path == "/overlay"
+        or request.path == "/api/events/next"
+        or request.path.startswith("/gift-assets/")
+    ):
+        response.headers["Cache-Control"] = (
+            "no-store, no-cache, must-revalidate, max-age=0"
+        )
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+
     return response
 
 
 def enqueue_event(event: dict[str, Any]) -> int:
     global event_sequence
+
     event_sequence += 1
-    stored = dict(event); stored["_overlay_sequence"] = event_sequence
+
+    stored = dict(event)
+    stored["_overlay_sequence"] = event_sequence
     event_queue.append(stored)
+
     return event_sequence
 
 
@@ -85,18 +153,13 @@ def enqueue_gift(event: dict[str, Any]) -> int:
 
 @app.get("/overlay")
 def overlay():
-    """
-    Muestra el overlay que se agregará como fuente de navegador.
-    """
+    """Muestra el overlay como fuente de navegador."""
     return render_template("overlay.html")
 
 
 @app.get("/gift-assets/<path:filename>")
 def gift_asset(filename: str):
-    """
-    Entrega al overlay las imágenes oficiales de regalos
-    almacenadas dentro de cache/gifts.
-    """
+    """Entrega las imágenes oficiales guardadas en caché."""
     return send_from_directory(
         directory=GIFT_CACHE_DIR,
         path=filename,
@@ -105,23 +168,95 @@ def gift_asset(filename: str):
 
 @app.get("/api/events/next")
 def next_event():
-    """
-    Entrega el siguiente evento de la cola.
+    """Entrega el siguiente evento pendiente al overlay."""
+    client_id = (
+        str(
+            request.args.get(
+                "client_id",
+                "legacy",
+            )
+        ).strip()[:64]
+        or "legacy"
+    )
 
-    El evento se elimina de la cola solamente cuando el
-    overlay lo solicita.
-    """
-    client_id = str(request.args.get("client_id", "legacy")).strip()[:64] or "legacy"
     with queue_lock:
-        seen = client_seen.setdefault(client_id, set())
-        allowed = {"gift", "member_level_up", "member_level_leaderboard"}
-        available = [item for item in event_queue if item.get("type") in allowed and int(item.get("_overlay_sequence", 0)) not in seen]
-        priority = {"member_level_up": 0, "gift": 1, "member_level_leaderboard": 2}
-        stored_event = min(available, key=lambda item: (priority.get(str(item.get("type")), 9), int(item.get("_overlay_sequence", 0)))) if available else None
+        seen = client_seen.setdefault(
+            client_id,
+            set(),
+        )
+
+        # CORRECCIÓN TOP LIKES:
+        # El navegador también puede recibir like_leaderboard.
+        allowed = {
+            "gift",
+            "member_level_up",
+            "member_level_leaderboard",
+            "like_leaderboard",
+        }
+
+        available = [
+            item
+            for item in event_queue
+            if (
+                item.get("type") in allowed
+                and int(
+                    item.get(
+                        "_overlay_sequence",
+                        0,
+                    )
+                )
+                not in seen
+            )
+        ]
+
+        priority = {
+            "member_level_up": 0,
+            "gift": 1,
+            "member_level_leaderboard": 2,
+            "like_leaderboard": 3,
+        }
+
+        stored_event = (
+            min(
+                available,
+                key=lambda item: (
+                    priority.get(
+                        str(item.get("type")),
+                        9,
+                    ),
+                    int(
+                        item.get(
+                            "_overlay_sequence",
+                            0,
+                        )
+                    ),
+                ),
+            )
+            if available
+            else None
+        )
+
         if stored_event is not None:
-            sequence = int(stored_event["_overlay_sequence"]); seen.add(sequence); client_cursors[client_id] = sequence
-        remaining_events = max(0, len(available) - 1)
-        event = {key: value for key, value in stored_event.items() if key != "_overlay_sequence"} if stored_event else None
+            sequence = int(
+                stored_event["_overlay_sequence"]
+            )
+            seen.add(sequence)
+            client_cursors[client_id] = sequence
+
+        remaining_events = max(
+            0,
+            len(available) - 1,
+        )
+
+        event = (
+            {
+                key: value
+                for key, value in stored_event.items()
+                if key != "_overlay_sequence"
+            }
+            if stored_event
+            else None
+        )
 
     return jsonify(
         {
@@ -133,60 +268,110 @@ def next_event():
 
 @app.post("/api/events")
 def add_event():
-    """
-    Recibe un evento desde PandaIA o TikTokLive.
-
-    Formato esperado para un regalo:
-
-    {
-        "type": "gift",
-        "gift_id": "5655",
-        "gift_name": "Rose",
-        "quantity": 5,
-        "image_url": "https://url-oficial-de-tiktok..."
-    }
-    """
+    """Recibe eventos desde PandaIA o TikTokLive."""
     payload = request.get_json(silent=True)
 
     if not isinstance(payload, dict):
-        return (
-            jsonify(
-                {
-                    "ok": False,
-                    "error": "No se recibió un JSON válido.",
-                }
-            ),
-            400,
-        )
+        return jsonify(
+            {
+                "ok": False,
+                "error": "No se recibió un JSON válido.",
+            }
+        ), 400
 
     event_type = str(
         payload.get("type", "")
     ).strip().lower()
 
     if not event_type:
-        return (
-            jsonify(
-                {
-                    "ok": False,
-                    "error": "El campo type es obligatorio.",
-                }
-            ),
-            400,
-        )
+        return jsonify(
+            {
+                "ok": False,
+                "error": "El campo type es obligatorio.",
+            }
+        ), 400
 
-    if event_type not in {"gift", "member_level_up", "member_level_leaderboard"}:
-        return jsonify({"ok": False, "error": "Tipo de evento no admitido por el overlay."}), 400
+    # CORRECCIÓN TOP LIKES:
+    # El servidor acepta el evento generado por LikeRankingManager.
+    allowed_event_types = {
+        "gift",
+        "member_level_up",
+        "member_level_leaderboard",
+        "like_leaderboard",
+    }
+
+    if event_type not in allowed_event_types:
+        return jsonify(
+            {
+                "ok": False,
+                "error": (
+                    "Tipo de evento no admitido por el overlay."
+                ),
+            }
+        ), 400
 
     if event_type != "gift":
-        try: event = sanitize_event(payload)
-        except (ValueError, TypeError) as error: return jsonify({"ok": False, "error": str(error)}), 400
-        if event_type == "member_level_up" and (not event.get("user_id") or not event.get("new_level")):
-            return jsonify({"ok": False, "error": "user_id y new_level son obligatorios."}), 400
-        if event_type == "member_level_leaderboard" and not event.get("members"):
-            return jsonify({"ok": False, "error": "El ranking requiere al menos un miembro."}), 400
+        try:
+            event = sanitize_event(payload)
+        except (ValueError, TypeError) as error:
+            return jsonify(
+                {
+                    "ok": False,
+                    "error": str(error),
+                }
+            ), 400
+
+        if (
+            event_type == "member_level_up"
+            and (
+                not event.get("user_id")
+                or not event.get("new_level")
+            )
+        ):
+            return jsonify(
+                {
+                    "ok": False,
+                    "error": (
+                        "user_id y new_level son obligatorios."
+                    ),
+                }
+            ), 400
+
+        if (
+            event_type
+            in {
+                "member_level_leaderboard",
+                "like_leaderboard",
+            }
+            and not event.get("members")
+        ):
+            ranking_name = (
+                "likes"
+                if event_type == "like_leaderboard"
+                else "miembros"
+            )
+
+            return jsonify(
+                {
+                    "ok": False,
+                    "error": (
+                        f"El ranking de {ranking_name} "
+                        "requiere al menos un usuario."
+                    ),
+                }
+            ), 400
+
         with queue_lock:
-            enqueue_event(event); queue_position = len(event_queue)
-        return jsonify({"ok": True, "queue_position": queue_position, "event": event})
+            enqueue_event(event)
+            queue_position = len(event_queue)
+
+        return jsonify(
+            {
+                "ok": True,
+                "queue_position": queue_position,
+                "event": event,
+            }
+        )
 
     gift_id = str(
         payload.get("gift_id", "")
@@ -201,58 +386,73 @@ def add_event():
     ).strip()
 
     if not gift_id:
-        return (
-            jsonify(
-                {
-                    "ok": False,
-                    "error": "El campo gift_id es obligatorio.",
-                }
-            ),
-            400,
-        )
+        return jsonify(
+            {
+                "ok": False,
+                "error": "El campo gift_id es obligatorio.",
+            }
+        ), 400
 
     if not gift_name:
-        return (
-            jsonify(
-                {
-                    "ok": False,
-                    "error": "El campo gift_name es obligatorio.",
-                }
-            ),
-            400,
-        )
+        return jsonify(
+            {
+                "ok": False,
+                "error": "El campo gift_name es obligatorio.",
+            }
+        ), 400
 
     try:
         quantity = int(
-            payload.get("quantity", 1)
+            payload.get(
+                "quantity",
+                1,
+            )
         )
     except (TypeError, ValueError):
         quantity = 1
 
-    quantity = max(1, min(quantity, 999))
+    quantity = max(
+        1,
+        min(
+            quantity,
+            999,
+        ),
+    )
 
     local_image_path = None
-    if official_image_url.startswith("/gift-assets/"):
-        candidate = (GIFT_CACHE_DIR / Path(official_image_url).name).resolve()
-        if candidate.parent == GIFT_CACHE_DIR.resolve() and candidate.is_file(): local_image_path = candidate
+
+    if official_image_url.startswith(
+        "/gift-assets/"
+    ):
+        candidate = (
+            GIFT_CACHE_DIR
+            / Path(official_image_url).name
+        ).resolve()
+
+        if (
+            candidate.parent
+            == GIFT_CACHE_DIR.resolve()
+            and candidate.is_file()
+        ):
+            local_image_path = candidate
     else:
-        local_image_path = get_gift_image(gift_id=gift_id, image_url=official_image_url)
+        local_image_path = get_gift_image(
+            gift_id=gift_id,
+            image_url=official_image_url,
+        )
 
     if local_image_path is None:
-        return (
-            jsonify(
-                {
-                    "ok": False,
-                    "error": (
-                        "No se encontró el regalo en caché y "
-                        "tampoco se pudo descargar su imagen."
-                    ),
-                    "gift_id": gift_id,
-                    "gift_name": gift_name,
-                }
-            ),
-            422,
-        )
+        return jsonify(
+            {
+                "ok": False,
+                "error": (
+                    "No se encontró el regalo en caché y "
+                    "tampoco se pudo descargar su imagen."
+                ),
+                "gift_id": gift_id,
+                "gift_name": gift_name,
+            }
+        ), 422
 
     local_image_url = get_overlay_image_url(
         local_image_path
@@ -264,12 +464,36 @@ def add_event():
         "gift_name": gift_name,
         "quantity": quantity,
         "image_url": local_image_url,
-        "username": str(payload.get("username", "")),
-        "animation": str(payload.get("animation", "Resplandor circular")),
-        "event_id": str(payload.get("event_id", "")),
-        "test": bool(payload.get("test", False)),
-        "duration_ms": payload.get("duration_ms", 4200),
+        "username": str(
+            payload.get(
+                "username",
+                "",
+            )
+        ),
+        "animation": str(
+            payload.get(
+                "animation",
+                "Resplandor circular",
+            )
+        ),
+        "event_id": str(
+            payload.get(
+                "event_id",
+                "",
+            )
+        ),
+        "test": bool(
+            payload.get(
+                "test",
+                False,
+            )
+        ),
+        "duration_ms": payload.get(
+            "duration_ms",
+            4200,
+        ),
     }
+
     event = sanitize_event(event)
 
     with queue_lock:
@@ -280,7 +504,8 @@ def add_event():
         {
             "ok": True,
             "message": (
-                f"{gift_name} x{quantity} agregado a la cola."
+                f"{gift_name} x{quantity} "
+                "agregado a la cola."
             ),
             "queue_position": queue_position,
             "cached_file": local_image_path.name,
@@ -291,24 +516,16 @@ def add_event():
 
 @app.post("/api/test/gift")
 def test_gift():
-    """
-    Permite probar una imagen de regalo sin tener todavía
-    conectada la cuenta de TikTok.
-
-    Recibe el mismo formato que /api/events.
-    """
+    """Prueba una imagen de regalo sin conectar TikTok."""
     payload = request.get_json(silent=True)
 
     if not isinstance(payload, dict):
-        return (
-            jsonify(
-                {
-                    "ok": False,
-                    "error": "No se recibió un JSON válido.",
-                }
-            ),
-            400,
-        )
+        return jsonify(
+            {
+                "ok": False,
+                "error": "No se recibió un JSON válido.",
+            }
+        ), 400
 
     payload["type"] = "gift"
 
@@ -325,26 +542,32 @@ def test_gift():
     ).strip()
 
     if not gift_id or not gift_name:
-        return (
-            jsonify(
-                {
-                    "ok": False,
-                    "error": (
-                        "gift_id y gift_name son obligatorios."
-                    ),
-                }
-            ),
-            400,
-        )
+        return jsonify(
+            {
+                "ok": False,
+                "error": (
+                    "gift_id y gift_name son obligatorios."
+                ),
+            }
+        ), 400
 
     try:
         quantity = int(
-            payload.get("quantity", 1)
+            payload.get(
+                "quantity",
+                1,
+            )
         )
     except (TypeError, ValueError):
         quantity = 1
 
-    quantity = max(1, min(quantity, 999))
+    quantity = max(
+        1,
+        min(
+            quantity,
+            999,
+        ),
+    )
 
     local_image_path = get_gift_image(
         gift_id=gift_id,
@@ -352,17 +575,14 @@ def test_gift():
     )
 
     if local_image_path is None:
-        return (
-            jsonify(
-                {
-                    "ok": False,
-                    "error": (
-                        "No se pudo obtener la imagen del regalo."
-                    ),
-                }
-            ),
-            422,
-        )
+        return jsonify(
+            {
+                "ok": False,
+                "error": (
+                    "No se pudo obtener la imagen del regalo."
+                ),
+            }
+        ), 422
 
     event = {
         "type": "gift",
@@ -393,9 +613,7 @@ def test_gift():
 
 @app.post("/api/events/clear")
 def clear_events():
-    """
-    Vacía todos los eventos pendientes.
-    """
+    """Vacía todos los eventos pendientes."""
     with queue_lock:
         removed_events = len(event_queue)
         event_queue.clear()
@@ -412,17 +630,17 @@ def clear_events():
 
 @app.get("/health")
 def health():
-    """
-    Confirma que el servidor del overlay está funcionando.
-    """
+    """Confirma que el servidor del overlay funciona."""
     with queue_lock:
         queued_events = len(event_queue)
 
     cached_files = [
         file_path.name
         for file_path in GIFT_CACHE_DIR.iterdir()
-        if file_path.is_file()
-        and not file_path.name.endswith(".tmp")
+        if (
+            file_path.is_file()
+            and not file_path.name.endswith(".tmp")
+        )
     ]
 
     return jsonify(
