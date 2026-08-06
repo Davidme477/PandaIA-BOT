@@ -19,21 +19,41 @@ from services.tiktok.gift_image_service import (
     get_gift_image,
     get_overlay_image_url,
 )
-from services.tiktok.live_state import LiveState, LiveStats
-from services.overlay.events import post_overlay_event
+from services.tiktok.like_ranking import (
+    LikeRankingManager,
+)
+from services.tiktok.live_state import (
+    LiveState,
+    LiveStats,
+)
 
 
 TIKTOK_USERNAME = "@latidosmusicales3"
+
 StatusCallback = Callable[[str, str], None]
-ActivityCallback = Callable[[str, str, str, str], None]
+ActivityCallback = Callable[
+    [str, str, str, str],
+    None,
+]
 CommentCallback = Callable[[str, str], None]
 GiftCallback = Callable[[str, str, int], None]
-class GiftAnimationCallback(Protocol):
-    def __call__(self, *, gift_id: str, gift_name: str, quantity: int,
-                 username: str, image_url: str = "", event_id: str = "") -> object: ...
 StatsCallback = Callable[[LiveStats], None]
 ResetCallback = Callable[[], None]
 MemberLevelCallback = Callable[..., object]
+
+
+class GiftAnimationCallback(Protocol):
+    def __call__(
+        self,
+        *,
+        gift_id: str,
+        gift_name: str,
+        quantity: int,
+        username: str,
+        image_url: str = "",
+        event_id: str = "",
+    ) -> object:
+        ...
 
 
 def get_first_image_url(gift: object) -> str:
@@ -42,33 +62,25 @@ def get_first_image_url(gift: object) -> str:
     if image is None:
         return ""
 
-    url_list = getattr(image, "url_list", None)
+    url_list = getattr(
+        image,
+        "url_list",
+        None,
+    )
 
     if url_list:
         return str(url_list[0]).strip()
 
-    url = getattr(image, "url", None)
+    url = getattr(
+        image,
+        "url",
+        None,
+    )
 
     if url:
         return str(url).strip()
 
     return ""
-
-
-def send_event_to_overlay(
-    *,
-    gift_id: str,
-    gift_name: str,
-    quantity: int,
-    image_url: str,
-) -> bool:
-    return post_overlay_event({
-        "type": "gift",
-        "gift_id": gift_id,
-        "gift_name": gift_name,
-        "quantity": quantity,
-        "image_url": image_url,
-    })
 
 
 class TikTokService:
@@ -79,22 +91,32 @@ class TikTokService:
         activity_callback: ActivityCallback | None = None,
         comment_callback: CommentCallback | None = None,
         gift_callback: GiftCallback | None = None,
-        gift_animation_callback: GiftAnimationCallback | None = None,
+        gift_animation_callback:
+            GiftAnimationCallback | None = None,
         stats_callback: StatsCallback | None = None,
         reset_callback: ResetCallback | None = None,
-        member_level_callback: MemberLevelCallback | None = None,
+        member_level_callback:
+            MemberLevelCallback | None = None,
     ) -> None:
         self.username = username.strip()
         self.status_callback = status_callback
         self.activity_callback = activity_callback
         self.comment_callback = comment_callback
         self.gift_callback = gift_callback
-        self.gift_animation_callback = gift_animation_callback
+        self.gift_animation_callback = (
+            gift_animation_callback
+        )
         self.stats_callback = stats_callback
         self.reset_callback = reset_callback
-        self.member_level_callback = member_level_callback
+        self.member_level_callback = (
+            member_level_callback
+        )
+
         self.live_state = LiveState()
-        self._timer_task: asyncio.Task[None] | None = None
+        self.like_ranking = LikeRankingManager()
+
+        self._timer_task:
+            asyncio.Task[None] | None = None
         self._live_connected = False
 
         if not self.username.startswith("@"):
@@ -106,14 +128,31 @@ class TikTokService:
 
         self.register_events()
 
-    def inspect_member_level(self, event: object) -> None:
-        if self.member_level_callback is None: return
+    def inspect_member_level(
+        self,
+        event: object,
+    ) -> None:
+        if self.member_level_callback is None:
+            return
+
         user = getattr(event, "user", None)
-        if user is None: return
+
+        if user is None:
+            return
+
         try:
-            self.member_level_callback(user, event_id=str(getattr(event, "id", "")))
+            self.member_level_callback(
+                user,
+                event_id=str(
+                    getattr(event, "id", "")
+                ),
+            )
         except Exception as error:
-            print("[TikTokService] Error al procesar nivel de miembro:", error)
+            print(
+                "[TikTokService] Error al procesar "
+                "nivel de miembro:",
+                error,
+            )
 
     def notify_status(
         self,
@@ -141,9 +180,14 @@ class TikTokService:
                 amount,
             )
 
-    def notify_stats(self, stats: LiveStats | None = None) -> None:
+    def notify_stats(
+        self,
+        stats: LiveStats | None = None,
+    ) -> None:
         if self.stats_callback is not None:
-            self.stats_callback(stats or self.live_state.snapshot())
+            self.stats_callback(
+                stats or self.live_state.snapshot()
+            )
 
     async def update_elapsed(self) -> None:
         try:
@@ -159,10 +203,19 @@ class TikTokService:
             event: ConnectEvent,
         ) -> None:
             self._live_connected = True
-            self.notify_stats(self.live_state.connect())
+            self.like_ranking.reset()
+
+            self.notify_stats(
+                self.live_state.connect()
+            )
+
             if self.reset_callback is not None:
                 self.reset_callback()
-            self._timer_task = asyncio.create_task(self.update_elapsed())
+
+            self._timer_task = asyncio.create_task(
+                self.update_elapsed()
+            )
+
             print("=" * 60)
             print("PANDAIA CONECTADO A TIKTOK")
             print("=" * 60)
@@ -183,10 +236,15 @@ class TikTokService:
             event: DisconnectEvent,
         ) -> None:
             self._live_connected = False
+
             if self._timer_task is not None:
                 self._timer_task.cancel()
                 self._timer_task = None
-            self.notify_stats(self.live_state.disconnect())
+
+            self.notify_stats(
+                self.live_state.disconnect()
+            )
+
             print("=" * 60)
             print("PANDAIA DESCONECTADO DE TIKTOK")
             print("=" * 60)
@@ -205,7 +263,9 @@ class TikTokService:
         ) -> None:
             if not self._live_connected:
                 return
+
             self.inspect_member_level(event)
+
             sender = getattr(
                 event.user,
                 "unique_id",
@@ -224,7 +284,10 @@ class TikTokService:
                 return
 
             self.notify_stats(
-                self.live_state.add_comment(comment, f"@{sender}")
+                self.live_state.add_comment(
+                    comment,
+                    f"@{sender}",
+                )
             )
 
             print("=" * 60)
@@ -240,8 +303,12 @@ class TikTokService:
                 f"@{sender}",
                 "",
             )
+
             if self.comment_callback is not None:
-                self.comment_callback(str(sender), comment)
+                self.comment_callback(
+                    str(sender),
+                    comment,
+                )
 
         @self.client.on(FollowEvent)
         async def on_follow(
@@ -249,13 +316,18 @@ class TikTokService:
         ) -> None:
             if not self._live_connected:
                 return
+
             self.inspect_member_level(event)
+
             sender = getattr(
                 event.user,
                 "unique_id",
                 "usuario",
             )
-            self.live_state.add_follow(f"@{sender}")
+
+            self.live_state.add_follow(
+                f"@{sender}"
+            )
 
             print("=" * 60)
             print("NUEVO SEGUIDOR")
@@ -276,7 +348,9 @@ class TikTokService:
         ) -> None:
             if not self._live_connected:
                 return
+
             self.inspect_member_level(event)
+
             gift = event.gift
 
             if gift is None:
@@ -291,7 +365,10 @@ class TikTokService:
                 or 0
             )
 
-            if gift_type == 1 and event.streaking:
+            if (
+                gift_type == 1 and
+                event.streaking
+            ):
                 return
 
             gift_id = str(
@@ -313,8 +390,7 @@ class TikTokService:
             quantity = max(
                 1,
                 int(
-                    event.repeat_count
-                    or 1
+                    event.repeat_count or 1
                 ),
             )
 
@@ -355,9 +431,18 @@ class TikTokService:
                 f"@{sender}",
                 f"x{quantity}",
             )
+
             if self.gift_callback is not None:
-                self.gift_callback(str(sender), gift_name, quantity)
-            if self.gift_animation_callback is not None:
+                self.gift_callback(
+                    str(sender),
+                    gift_name,
+                    quantity,
+                )
+
+            if (
+                self.gift_animation_callback
+                is not None
+            ):
                 try:
                     self.gift_animation_callback(
                         gift_id=gift_id,
@@ -365,10 +450,20 @@ class TikTokService:
                         quantity=quantity,
                         username=str(sender),
                         image_url=image_url,
-                        event_id=str(getattr(event, "id", "")),
+                        event_id=str(
+                            getattr(
+                                event,
+                                "id",
+                                "",
+                            )
+                        ),
                     )
                 except Exception as error:
-                    print("[TikTokService] Error al enviar la animación del regalo:", error)
+                    print(
+                        "[TikTokService] Error al "
+                        "enviar la animación del regalo:",
+                        error,
+                    )
 
             local_image = get_gift_image(
                 gift_id=gift_id,
@@ -383,41 +478,62 @@ class TikTokService:
                 print("=" * 60)
                 return
 
-            local_image_url = get_overlay_image_url(
-                local_image
+            local_image_url = (
+                get_overlay_image_url(
+                    local_image
+                )
             )
 
             print(
                 "Archivo en caché:",
                 local_image,
             )
-
             print(
                 "URL local:",
                 local_image_url,
             )
-
             print("=" * 60)
 
         @self.client.on(RoomUserSeqEvent)
-        async def on_room_users(event: RoomUserSeqEvent) -> None:
+        async def on_room_users(
+            event: RoomUserSeqEvent,
+        ) -> None:
             if not self._live_connected:
                 return
+
             self.notify_stats(
-                self.live_state.update_viewers(event.total)
+                self.live_state.update_viewers(
+                    event.total
+                )
             )
 
         @self.client.on(LikeEvent)
-        async def on_like(event: LikeEvent) -> None:
+        async def on_like(
+            event: LikeEvent,
+        ) -> None:
             if not self._live_connected:
                 return
+
             self.inspect_member_level(event)
+
             self.notify_stats(
                 self.live_state.update_likes(
                     total=event.total,
                     count=event.count,
                 )
             )
+
+            user = getattr(
+                event,
+                "user",
+                None,
+            )
+
+            if user is not None:
+                self.like_ranking.observe(
+                    user,
+                    int(event.count or 0),
+                )
 
     async def connect(self) -> None:
         await self.client.connect(
@@ -447,7 +563,6 @@ def main() -> None:
     service = TikTokService(
         username=TIKTOK_USERNAME
     )
-
     service.run()
 
 

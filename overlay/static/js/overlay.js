@@ -9,22 +9,52 @@ const giftSender = document.getElementById("gift-sender");
 const giftName = document.getElementById("gift-name");
 const flashEffect = document.getElementById("flash-effect");
 const ambientLight = document.getElementById("ambient-light");
+
 const memberStage = document.getElementById("member-level-stage");
 const memberTitle = document.getElementById("member-title");
 const memberSubtitle = document.getElementById("member-subtitle");
 const memberAvatar = document.getElementById("member-avatar");
 const memberLevel = document.getElementById("member-level");
-const rankingStage = document.getElementById("member-ranking-stage");
-const rankingWheels = document.getElementById("ranking-wheels");
+
+const memberRankingStage =
+    document.getElementById("member-ranking-stage");
+const memberRankingWheels =
+    document.getElementById("ranking-wheels");
+
+const likesRankingStage =
+    document.getElementById("likes-ranking-stage");
+const likesRankingWheels =
+    document.getElementById("likes-ranking-wheels");
 
 let animationRunning = false;
-let persistentRankingEvent = null;
-let persistentRankingFingerprint = "";
 let pollingEnabled = true;
-const overlayClientId = sessionStorage.getItem("pandaia-overlay-client-id") ||
-    (window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : `overlay-${Date.now()}-${Math.random()}`);
-sessionStorage.setItem("pandaia-overlay-client-id", overlayClientId);
-const overlayAccessToken = new URLSearchParams(window.location.search).get("access") || "";
+
+const persistentRankings = {
+    members: null,
+    likes: null
+};
+
+const rankingFingerprints = {
+    members: "",
+    likes: ""
+};
+
+const overlayClientId =
+    sessionStorage.getItem("pandaia-overlay-client-id") ||
+    (
+        window.crypto && window.crypto.randomUUID
+            ? window.crypto.randomUUID()
+            : `overlay-${Date.now()}-${Math.random()}`
+    );
+
+sessionStorage.setItem(
+    "pandaia-overlay-client-id",
+    overlayClientId
+);
+
+const overlayAccessToken =
+    new URLSearchParams(window.location.search)
+        .get("access") || "";
 
 
 function sleep(milliseconds) {
@@ -36,9 +66,7 @@ function sleep(milliseconds) {
 
 function restartAnimation(element, className) {
     element.classList.remove(className);
-
     void element.offsetWidth;
-
     element.classList.add(className);
 }
 
@@ -61,10 +89,19 @@ function getEventImageUrl(event) {
             value.startsWith("/") ||
             value.startsWith("data:image/")
         ) {
-            if (value.startsWith("/gift-assets/") && overlayAccessToken) {
-                const separator = value.includes("?") ? "&" : "?";
-                return `${value}${separator}access=${encodeURIComponent(overlayAccessToken)}`;
+            if (
+                value.startsWith("/gift-assets/") &&
+                overlayAccessToken
+            ) {
+                const separator =
+                    value.includes("?") ? "&" : "?";
+
+                return (
+                    `${value}${separator}access=` +
+                    encodeURIComponent(overlayAccessToken)
+                );
             }
+
             return value;
         }
     }
@@ -94,26 +131,44 @@ function getGiftName(event) {
 }
 
 
-function getRankingFingerprint(event) {
-    const members = Array.isArray(event.members)
-        ? event.members.slice(0, 3).map((member) => ({
-            unique_id: String(member.unique_id || ""),
-            nickname: String(member.nickname || ""),
-            current_level: Number(member.current_level || 0),
-            avatar: String(member.avatar || "")
-        }))
+function rankingFingerprint(event, kind) {
+    const rows = Array.isArray(event.members)
+        ? event.members.slice(0, 3)
         : [];
 
     return JSON.stringify({
+        kind,
         mode: String(event.mode || ""),
         position: String(event.position || ""),
         scale: Number(event.scale || 100),
-        members
+        rows: rows.map((row) => ({
+            user_id: String(row.user_id || ""),
+            unique_id: String(row.unique_id || ""),
+            nickname: String(row.nickname || ""),
+            avatar: String(row.avatar || ""),
+            current_level: Number(row.current_level || 0),
+            likes: Number(row.likes || 0)
+        }))
     });
 }
 
 
-function clearAnimation({preserveRanking = false} = {}) {
+function formatLikes(value) {
+    const likes = Math.max(0, Number(value || 0));
+
+    if (likes >= 1000000) {
+        return `${(likes / 1000000).toFixed(1)}M`;
+    }
+
+    if (likes >= 1000) {
+        return `${(likes / 1000).toFixed(1)}K`;
+    }
+
+    return String(likes);
+}
+
+
+function clearTransientAnimation() {
     giftContainer.classList.remove("visible");
     flashEffect.classList.remove("active");
     ambientLight.classList.remove("active");
@@ -131,56 +186,110 @@ function clearAnimation({preserveRanking = false} = {}) {
     );
     memberStage.setAttribute("aria-hidden", "true");
     memberAvatar.removeAttribute("src");
+}
 
-    if (preserveRanking && persistentRankingEvent) {
-        rankingStage.classList.add("ranking-temporarily-hidden");
-        return;
-    }
 
-    rankingStage.classList.remove(
-        "visible",
-        "ranking-top",
-        "ranking-bottom",
-        "ranking-persistent",
+function hideRankings() {
+    memberRankingStage.classList.add(
         "ranking-temporarily-hidden"
     );
-    rankingStage.setAttribute("aria-hidden", "true");
-    rankingWheels.replaceChildren();
+    likesRankingStage.classList.add(
+        "ranking-temporarily-hidden"
+    );
+
+    memberRankingStage.setAttribute(
+        "aria-hidden",
+        "true"
+    );
+    likesRankingStage.setAttribute(
+        "aria-hidden",
+        "true"
+    );
 }
 
 
-function hidePersistentRanking() {
-    if (!persistentRankingEvent) {
-        return;
+function showRankings() {
+    if (persistentRankings.members) {
+        memberRankingStage.classList.remove(
+            "ranking-temporarily-hidden"
+        );
+        memberRankingStage.classList.add(
+            "visible",
+            "ranking-persistent"
+        );
+        memberRankingStage.setAttribute(
+            "aria-hidden",
+            "false"
+        );
     }
 
-    rankingStage.classList.add("ranking-temporarily-hidden");
-    rankingStage.setAttribute("aria-hidden", "true");
-}
-
-
-function showPersistentRanking() {
-    if (!persistentRankingEvent) {
-        return;
+    if (persistentRankings.likes) {
+        likesRankingStage.classList.remove(
+            "ranking-temporarily-hidden"
+        );
+        likesRankingStage.classList.add(
+            "visible",
+            "ranking-persistent"
+        );
+        likesRankingStage.setAttribute(
+            "aria-hidden",
+            "false"
+        );
     }
-
-    rankingStage.classList.remove("ranking-temporarily-hidden");
-    rankingStage.classList.add("visible", "ranking-persistent");
-    rankingStage.setAttribute("aria-hidden", "false");
 }
+
 
 function playLevelSound(event) {
-    if (!event.sound) return;
+    if (!event.sound) {
+        return;
+    }
+
     try {
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
-        const context = new AudioContext(); const oscillator = context.createOscillator(); const gain = context.createGain();
-        oscillator.type = "sine"; oscillator.frequency.setValueAtTime(220, context.currentTime);
-        oscillator.frequency.exponentialRampToValueAtTime(880, context.currentTime + 1.4);
-        gain.gain.setValueAtTime(Math.max(0, Math.min(1, Number(event.volume || 50) / 100)) * 0.18, context.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 1.7);
-        oscillator.connect(gain); gain.connect(context.destination); oscillator.start(); oscillator.stop(context.currentTime + 1.7);
+        const AudioContext =
+            window.AudioContext ||
+            window.webkitAudioContext;
+
+        const context = new AudioContext();
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+
+        oscillator.type = "sine";
+        oscillator.frequency.setValueAtTime(
+            220,
+            context.currentTime
+        );
+        oscillator.frequency.exponentialRampToValueAtTime(
+            880,
+            context.currentTime + 1.4
+        );
+
+        gain.gain.setValueAtTime(
+            Math.max(
+                0,
+                Math.min(
+                    1,
+                    Number(event.volume || 50) / 100
+                )
+            ) * 0.18,
+            context.currentTime
+        );
+
+        gain.gain.exponentialRampToValueAtTime(
+            0.001,
+            context.currentTime + 1.7
+        );
+
+        oscillator.connect(gain);
+        gain.connect(context.destination);
+        oscillator.start();
+        oscillator.stop(context.currentTime + 1.7);
         oscillator.onended = () => context.close();
-    } catch (error) { console.warn("No se pudo reproducir el sonido del ascenso.", error); }
+    } catch (error) {
+        console.warn(
+            "No se pudo reproducir el sonido del ascenso.",
+            error
+        );
+    }
 }
 
 
@@ -188,185 +297,213 @@ function preloadImage(imageUrl) {
     return new Promise((resolve, reject) => {
         const image = new Image();
 
-        image.onload = () => {
-            resolve(imageUrl);
-        };
-
-        image.onerror = () => {
-            reject(
-                new Error(
-                    `No se pudo cargar la imagen: ${imageUrl}`
-                )
-            );
-        };
-
+        image.onload = () => resolve(imageUrl);
+        image.onerror = () => reject(
+            new Error(
+                `No se pudo cargar la imagen: ${imageUrl}`
+            )
+        );
         image.src = imageUrl;
     });
 }
 
-function renderRanking(event, {force = false} = {}) {
-    const fingerprint = getRankingFingerprint(event);
-    const isPersistent = String(event.mode || "")
-        .toLowerCase()
-        .includes("siempre");
+
+function createRankingCard(row, index, kind) {
+    const medals = [
+        {place: 1, label: "1", tone: "gold"},
+        {place: 2, label: "2", tone: "silver"},
+        {place: 3, label: "3", tone: "bronze"}
+    ];
+
+    const medal = medals[index];
+    const card = document.createElement("article");
+
+    card.className = [
+        "ranking-crown",
+        `place-${medal.place}`,
+        `crown-${medal.tone}`,
+        `ranking-kind-${kind}`
+    ].join(" ");
+
+    const scene = document.createElement("div");
+    scene.className = "crown-scene";
+
+    const rotor = document.createElement("div");
+    rotor.className = "crown-rotor";
+    rotor.style.animationDelay = `${index * 0.55}s`;
+
+    const metricFace = document.createElement("div");
+    metricFace.className =
+        "crown-face crown-level-face crown-metric-face";
+
+    const decoration = document.createElement("div");
+    decoration.className = "crown-shape";
+
+    const place = document.createElement("b");
+    place.className = "crown-place";
+    place.textContent = medal.label;
+
+    const metricLabel = document.createElement("small");
+    metricLabel.textContent =
+        kind === "likes" ? "LIKES" : "NIVEL";
+
+    const metric = document.createElement("strong");
+    metric.textContent =
+        kind === "likes"
+            ? formatLikes(row.likes)
+            : String(row.current_level || 0);
+
+    metricFace.append(
+        decoration,
+        place,
+        metricLabel,
+        metric
+    );
+
+    const avatarFace = document.createElement("div");
+    avatarFace.className =
+        "crown-face crown-avatar-face";
+
+    const avatarDecoration =
+        document.createElement("div");
+    avatarDecoration.className = "crown-shape";
+
+    const avatarFrame =
+        document.createElement("div");
+    avatarFrame.className = "crown-avatar-frame";
+
+    const image = document.createElement("img");
+    image.alt = "";
+    image.decoding = "async";
+
+    if (row.avatar) {
+        image.src = row.avatar;
+    }
+
+    const fallback = document.createElement("span");
+    fallback.className = "avatar-fallback";
+    fallback.textContent = String(
+        row.nickname ||
+        row.unique_id ||
+        "P"
+    ).trim().charAt(0).toUpperCase() || "P";
+
+    image.addEventListener("load", () => {
+        fallback.style.display = "none";
+    });
+
+    avatarFrame.append(image, fallback);
+
+    const avatarPlace =
+        document.createElement("b");
+    avatarPlace.className = "crown-place";
+    avatarPlace.textContent = medal.label;
+
+    avatarFace.append(
+        avatarDecoration,
+        avatarFrame,
+        avatarPlace
+    );
+
+    rotor.append(metricFace, avatarFace);
+    scene.append(rotor);
+
+    const metricBadge =
+        document.createElement("span");
+    metricBadge.className = "ranking-metric-badge";
+    metricBadge.textContent =
+        kind === "likes"
+            ? `♥ ${formatLikes(row.likes)}`
+            : `♛ ${Number(row.current_level || 0)}`;
+
+    const name = document.createElement("span");
+    name.className = "crown-member-name";
+    name.textContent =
+        row.nickname ||
+        row.unique_id ||
+        (
+            kind === "likes"
+                ? "Seguidor"
+                : "Miembro"
+        );
+
+    card.append(
+        scene,
+        metricBadge,
+        name
+    );
+
+    return card;
+}
+
+
+function renderRanking(event, kind) {
+    const isLikes = kind === "likes";
+    const stage = isLikes
+        ? likesRankingStage
+        : memberRankingStage;
+    const wheels = isLikes
+        ? likesRankingWheels
+        : memberRankingWheels;
+
+    const fingerprint =
+        rankingFingerprint(event, kind);
 
     if (
-        isPersistent &&
-        !force &&
-        fingerprint === persistentRankingFingerprint &&
-        rankingWheels.childElementCount > 0
+        fingerprint === rankingFingerprints[kind] &&
+        wheels.childElementCount > 0
     ) {
-        rankingStage.classList.add(
+        stage.classList.remove(
+            "ranking-temporarily-hidden"
+        );
+        stage.classList.add(
             "visible",
             "ranking-persistent"
         );
-        rankingStage.classList.remove("ranking-temporarily-hidden");
-        rankingStage.setAttribute("aria-hidden", "false");
+        stage.setAttribute("aria-hidden", "false");
         return;
     }
 
-    rankingWheels.replaceChildren();
+    wheels.replaceChildren();
 
-    const members = Array.isArray(event.members)
+    const rows = Array.isArray(event.members)
         ? event.members.slice(0, 3)
         : [];
 
-    const medals = [
-        {place: 1, label: "TOP 1", tone: "gold"},
-        {place: 2, label: "TOP 2", tone: "silver"},
-        {place: 3, label: "TOP 3", tone: "bronze"}
-    ];
-
-    members.forEach((member, index) => {
-        const medal = medals[index];
-
-        const card = document.createElement("article");
-        card.className =
-            `ranking-crown place-${medal.place} crown-${medal.tone}`;
-
-        const scene = document.createElement("div");
-        scene.className = "crown-scene";
-
-        const rotor = document.createElement("div");
-        rotor.className = "crown-rotor";
-        rotor.style.animationDelay = `${index * 0.55}s`;
-
-        const levelFace = document.createElement("div");
-        levelFace.className = "crown-face crown-level-face";
-
-        const levelCrown = document.createElement("div");
-        levelCrown.className = "crown-shape";
-
-        const place = document.createElement("b");
-        place.className = "crown-place";
-        place.textContent = medal.label;
-
-        const levelLabel = document.createElement("small");
-        levelLabel.textContent = "NIVEL";
-
-        const level = document.createElement("strong");
-        level.textContent = String(member.current_level || 0);
-
-        levelFace.append(
-            levelCrown,
-            place,
-            levelLabel,
-            level
+    rows.forEach((row, index) => {
+        wheels.append(
+            createRankingCard(row, index, kind)
         );
-
-        const avatarFace = document.createElement("div");
-        avatarFace.className = "crown-face crown-avatar-face";
-
-        const avatarCrown = document.createElement("div");
-        avatarCrown.className = "crown-shape";
-
-        const avatarFrame = document.createElement("div");
-        avatarFrame.className = "crown-avatar-frame";
-
-        const image = document.createElement("img");
-        image.alt = "";
-        image.decoding = "async";
-
-        if (member.avatar) {
-            image.src = member.avatar;
-        }
-
-        const avatarFallback = document.createElement("span");
-        avatarFallback.className = "avatar-fallback";
-        avatarFallback.textContent = String(
-            member.nickname ||
-            member.unique_id ||
-            "M"
-        ).trim().charAt(0).toUpperCase() || "M";
-
-        image.addEventListener("load", () => {
-            avatarFallback.style.display = "none";
-        });
-
-        avatarFrame.append(image, avatarFallback);
-
-        const avatarPlace = document.createElement("b");
-        avatarPlace.className = "crown-place";
-        avatarPlace.textContent = medal.label;
-
-        avatarFace.append(
-            avatarCrown,
-            avatarFrame,
-            avatarPlace
-        );
-
-        rotor.append(levelFace, avatarFace);
-        scene.append(rotor);
-
-        const name = document.createElement("span");
-        name.className = "crown-member-name";
-        name.textContent =
-            member.nickname ||
-            member.unique_id ||
-            "Miembro";
-
-        card.append(scene, name);
-        rankingWheels.append(card);
     });
 
-    rankingStage.style.setProperty(
+    stage.style.setProperty(
         "--ranking-scale",
         `${Math.max(
             50,
-            Math.min(150, Number(event.scale || 100))
+            Math.min(
+                150,
+                Number(event.scale || 100)
+            )
         ) / 100}`
     );
 
-    rankingStage.classList.remove(
+    stage.classList.remove(
+        "ranking-temporarily-hidden",
         "ranking-top",
-        "ranking-bottom",
-        "ranking-temporarily-hidden"
+        "ranking-bottom"
     );
 
-    rankingStage.classList.add(
-        String(event.position || "")
-            .toLowerCase()
-            .includes("inferior")
-            ? "ranking-bottom"
-            : "ranking-top"
+    stage.classList.add(
+        "visible",
+        "ranking-persistent"
     );
 
-    rankingStage.classList.toggle(
-        "ranking-persistent",
-        isPersistent
-    );
+    stage.setAttribute("aria-hidden", "false");
 
-    rankingStage.setAttribute("aria-hidden", "false");
-    rankingStage.classList.add("visible");
-
-    if (!isPersistent) {
-        restartAnimation(rankingStage, "visible");
-    }
-
-    if (isPersistent) {
-        persistentRankingFingerprint = fingerprint;
-    }
+    rankingFingerprints[kind] = fingerprint;
+    persistentRankings[kind] = event;
 }
+
 
 async function prepareGift(event) {
     const imageUrl = getEventImageUrl(event);
@@ -381,13 +518,12 @@ async function prepareGift(event) {
 
     giftImage.src = imageUrl;
     giftImage.alt = getGiftName(event);
-
     giftSender.textContent = getSenderName(event);
     giftName.textContent = getGiftName(event);
 }
 
 
-function startAnimation() {
+function startGiftAnimation() {
     giftContainer.setAttribute(
         "aria-hidden",
         "false"
@@ -411,6 +547,21 @@ function startAnimation() {
 
 
 async function playEvent(event) {
+    const rankingTypes = [
+        "member_level_leaderboard",
+        "like_leaderboard"
+    ];
+
+    if (rankingTypes.includes(event.type)) {
+        renderRanking(
+            event,
+            event.type === "like_leaderboard"
+                ? "likes"
+                : "members"
+        );
+        return;
+    }
+
     if (animationRunning) {
         return;
     }
@@ -418,32 +569,9 @@ async function playEvent(event) {
     if (
         ![
             "gift",
-            "member_level_up",
-            "member_level_leaderboard"
+            "member_level_up"
         ].includes(event.type)
     ) {
-        return;
-    }
-
-    const isPersistentRanking =
-        event.type === "member_level_leaderboard" &&
-        String(event.mode || "")
-            .toLowerCase()
-            .includes("siempre");
-
-    const incomingRankingFingerprint =
-        isPersistentRanking
-            ? getRankingFingerprint(event)
-            : "";
-
-    if (
-        isPersistentRanking &&
-        persistentRankingFingerprint &&
-        incomingRankingFingerprint === persistentRankingFingerprint &&
-        rankingWheels.childElementCount > 0
-    ) {
-        persistentRankingEvent = event;
-        showPersistentRanking();
         return;
     }
 
@@ -457,11 +585,8 @@ async function playEvent(event) {
     animationRunning = true;
 
     try {
-        const preserveRanking =
-            Boolean(persistentRankingEvent) &&
-            event.type !== "member_level_leaderboard";
-
-        clearAnimation({preserveRanking});
+        hideRankings();
+        clearTransientAnimation();
 
         const duration = Math.max(
             1000,
@@ -480,19 +605,11 @@ async function playEvent(event) {
             `${duration}ms`
         );
 
-        document.documentElement.style.setProperty(
-            "--ranking-duration",
-            `${duration}ms`
-        );
-
         if (event.type === "gift") {
-            hidePersistentRanking();
             await prepareGift(event);
-            startAnimation();
+            startGiftAnimation();
             await sleep(duration);
-        } else if (event.type === "member_level_up") {
-            hidePersistentRanking();
-
+        } else {
             const user = getSenderName(event)
                 .replace(/^@/, "");
 
@@ -523,6 +640,7 @@ async function playEvent(event) {
                 "aria-hidden",
                 "false"
             );
+
             restartAnimation(
                 memberStage,
                 "visible"
@@ -545,18 +663,6 @@ async function playEvent(event) {
             );
 
             await sleep(duration);
-        } else {
-            if (isPersistentRanking) {
-                persistentRankingEvent = event;
-            }
-
-            renderRanking(event, {
-                force: !isPersistentRanking
-            });
-
-            if (!isPersistentRanking) {
-                await sleep(duration);
-            }
         }
     } catch (error) {
         console.error(
@@ -565,38 +671,32 @@ async function playEvent(event) {
             event
         );
     } finally {
-        const permanentRankingWasShown =
-            event.type === "member_level_leaderboard" &&
-            isPersistentRanking;
-
-        if (!permanentRankingWasShown) {
-            clearAnimation({
-                preserveRanking:
-                    Boolean(persistentRankingEvent)
-            });
-
-            if (persistentRankingEvent) {
-                showPersistentRanking();
-            }
-
-            await sleep(PAUSE_BETWEEN_EVENTS_MS);
-        }
-
+        clearTransientAnimation();
+        showRankings();
+        await sleep(PAUSE_BETWEEN_EVENTS_MS);
         animationRunning = false;
     }
 }
 
+
 async function requestNextEvent() {
-    if (
-        !pollingEnabled ||
-        animationRunning
-    ) {
+    if (!pollingEnabled) {
         return;
     }
 
     try {
         const response = await fetch(
-            `/api/events/next?client_id=${encodeURIComponent(overlayClientId)}${overlayAccessToken ? `&access=${encodeURIComponent(overlayAccessToken)}` : ""}`,
+            `/api/events/next?client_id=${
+                encodeURIComponent(overlayClientId)
+            }${
+                overlayAccessToken
+                    ? `&access=${
+                        encodeURIComponent(
+                            overlayAccessToken
+                        )
+                    }`
+                    : ""
+            }`,
             {
                 method: "GET",
                 cache: "no-store",
@@ -611,7 +711,6 @@ async function requestNextEvent() {
                 "El servidor respondió:",
                 response.status
             );
-
             return;
         }
 
@@ -645,5 +744,5 @@ window.addEventListener(
 );
 
 
-clearAnimation();
+clearTransientAnimation();
 pollingLoop();
