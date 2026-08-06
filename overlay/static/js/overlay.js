@@ -113,24 +113,60 @@ function getRankingFingerprint(event) {
 }
 
 
-function clearAnimation() {
+function clearAnimation({preserveRanking = false} = {}) {
     giftContainer.classList.remove("visible");
     flashEffect.classList.remove("active");
     ambientLight.classList.remove("active");
 
-    giftContainer.setAttribute(
-        "aria-hidden",
-        "true"
-    );
-
+    giftContainer.setAttribute("aria-hidden", "true");
     giftImage.removeAttribute("src");
     giftImage.alt = "";
-
     giftSender.textContent = "";
     giftName.textContent = "";
-    memberStage.classList.remove("visible"); memberStage.setAttribute("aria-hidden", "true");
-    rankingStage.classList.remove("visible", "ranking-top", "ranking-bottom"); rankingStage.setAttribute("aria-hidden", "true");
-    memberAvatar.removeAttribute("src"); rankingWheels.replaceChildren();
+
+    memberStage.classList.remove(
+        "visible",
+        "member-notice-phase",
+        "member-shuttle-phase"
+    );
+    memberStage.setAttribute("aria-hidden", "true");
+    memberAvatar.removeAttribute("src");
+
+    if (preserveRanking && persistentRankingEvent) {
+        rankingStage.classList.add("ranking-temporarily-hidden");
+        return;
+    }
+
+    rankingStage.classList.remove(
+        "visible",
+        "ranking-top",
+        "ranking-bottom",
+        "ranking-persistent",
+        "ranking-temporarily-hidden"
+    );
+    rankingStage.setAttribute("aria-hidden", "true");
+    rankingWheels.replaceChildren();
+}
+
+
+function hidePersistentRanking() {
+    if (!persistentRankingEvent) {
+        return;
+    }
+
+    rankingStage.classList.add("ranking-temporarily-hidden");
+    rankingStage.setAttribute("aria-hidden", "true");
+}
+
+
+function showPersistentRanking() {
+    if (!persistentRankingEvent) {
+        return;
+    }
+
+    rankingStage.classList.remove("ranking-temporarily-hidden");
+    rankingStage.classList.add("visible", "ranking-persistent");
+    rankingStage.setAttribute("aria-hidden", "false");
 }
 
 function playLevelSound(event) {
@@ -168,7 +204,27 @@ function preloadImage(imageUrl) {
     });
 }
 
-function renderRanking(event) {
+function renderRanking(event, {force = false} = {}) {
+    const fingerprint = getRankingFingerprint(event);
+    const isPersistent = String(event.mode || "")
+        .toLowerCase()
+        .includes("siempre");
+
+    if (
+        isPersistent &&
+        !force &&
+        fingerprint === persistentRankingFingerprint &&
+        rankingWheels.childElementCount > 0
+    ) {
+        rankingStage.classList.add(
+            "visible",
+            "ranking-persistent"
+        );
+        rankingStage.classList.remove("ranking-temporarily-hidden");
+        rankingStage.setAttribute("aria-hidden", "false");
+        return;
+    }
+
     rankingWheels.replaceChildren();
 
     const members = Array.isArray(event.members)
@@ -185,7 +241,8 @@ function renderRanking(event) {
         const medal = medals[index];
 
         const card = document.createElement("article");
-        card.className = `ranking-crown place-${medal.place} crown-${medal.tone}`;
+        card.className =
+            `ranking-crown place-${medal.place} crown-${medal.tone}`;
 
         const scene = document.createElement("div");
         scene.className = "crown-scene";
@@ -210,7 +267,12 @@ function renderRanking(event) {
         const level = document.createElement("strong");
         level.textContent = String(member.current_level || 0);
 
-        levelFace.append(levelCrown, place, levelLabel, level);
+        levelFace.append(
+            levelCrown,
+            place,
+            levelLabel,
+            level
+        );
 
         const avatarFace = document.createElement("div");
         avatarFace.className = "crown-face crown-avatar-face";
@@ -224,6 +286,7 @@ function renderRanking(event) {
         const image = document.createElement("img");
         image.alt = "";
         image.decoding = "async";
+
         if (member.avatar) {
             image.src = member.avatar;
         }
@@ -231,7 +294,9 @@ function renderRanking(event) {
         const avatarFallback = document.createElement("span");
         avatarFallback.className = "avatar-fallback";
         avatarFallback.textContent = String(
-            member.nickname || member.unique_id || "M"
+            member.nickname ||
+            member.unique_id ||
+            "M"
         ).trim().charAt(0).toUpperCase() || "M";
 
         image.addEventListener("load", () => {
@@ -244,13 +309,21 @@ function renderRanking(event) {
         avatarPlace.className = "crown-place";
         avatarPlace.textContent = medal.label;
 
-        avatarFace.append(avatarCrown, avatarFrame, avatarPlace);
+        avatarFace.append(
+            avatarCrown,
+            avatarFrame,
+            avatarPlace
+        );
+
         rotor.append(levelFace, avatarFace);
         scene.append(rotor);
 
         const name = document.createElement("span");
         name.className = "crown-member-name";
-        name.textContent = member.nickname || member.unique_id || "Miembro";
+        name.textContent =
+            member.nickname ||
+            member.unique_id ||
+            "Miembro";
 
         card.append(scene, name);
         rankingWheels.append(card);
@@ -258,19 +331,42 @@ function renderRanking(event) {
 
     rankingStage.style.setProperty(
         "--ranking-scale",
-        `${Math.max(50, Math.min(150, Number(event.scale || 100))) / 100}`
+        `${Math.max(
+            50,
+            Math.min(150, Number(event.scale || 100))
+        ) / 100}`
+    );
+
+    rankingStage.classList.remove(
+        "ranking-top",
+        "ranking-bottom",
+        "ranking-temporarily-hidden"
     );
 
     rankingStage.classList.add(
-        String(event.position).toLowerCase().includes("inferior")
+        String(event.position || "")
+            .toLowerCase()
+            .includes("inferior")
             ? "ranking-bottom"
             : "ranking-top"
     );
 
-    rankingStage.setAttribute("aria-hidden", "false");
-    restartAnimation(rankingStage, "visible");
-}
+    rankingStage.classList.toggle(
+        "ranking-persistent",
+        isPersistent
+    );
 
+    rankingStage.setAttribute("aria-hidden", "false");
+    rankingStage.classList.add("visible");
+
+    if (!isPersistent) {
+        restartAnimation(rankingStage, "visible");
+    }
+
+    if (isPersistent) {
+        persistentRankingFingerprint = fingerprint;
+    }
+}
 
 async function prepareGift(event) {
     const imageUrl = getEventImageUrl(event);
@@ -319,26 +415,35 @@ async function playEvent(event) {
         return;
     }
 
-    if (!["gift", "member_level_up", "member_level_leaderboard"].includes(event.type)) {
+    if (
+        ![
+            "gift",
+            "member_level_up",
+            "member_level_leaderboard"
+        ].includes(event.type)
+    ) {
         return;
     }
 
     const isPersistentRanking =
         event.type === "member_level_leaderboard" &&
-        String(event.mode || "").toLowerCase().includes("siempre");
+        String(event.mode || "")
+            .toLowerCase()
+            .includes("siempre");
 
-    const incomingRankingFingerprint = isPersistentRanking
-        ? getRankingFingerprint(event)
-        : "";
+    const incomingRankingFingerprint =
+        isPersistentRanking
+            ? getRankingFingerprint(event)
+            : "";
 
-    /* Evita reconstruir y reiniciar el Top 3 cuando llega exactamente
-       el mismo ranking permanente otra vez. */
     if (
         isPersistentRanking &&
         persistentRankingFingerprint &&
         incomingRankingFingerprint === persistentRankingFingerprint &&
-        rankingStage.classList.contains("visible")
+        rankingWheels.childElementCount > 0
     ) {
+        persistentRankingEvent = event;
+        showPersistentRanking();
         return;
     }
 
@@ -352,13 +457,21 @@ async function playEvent(event) {
     animationRunning = true;
 
     try {
-        clearAnimation();
+        const preserveRanking =
+            Boolean(persistentRankingEvent) &&
+            event.type !== "member_level_leaderboard";
+
+        clearAnimation({preserveRanking});
 
         const duration = Math.max(
             1000,
             Number(
                 event.duration_ms ||
-                (event.type === "gift" ? ANIMATION_DURATION_MS : 8000)
+                (
+                    event.type === "gift"
+                        ? ANIMATION_DURATION_MS
+                        : 8000
+                )
             )
         );
 
@@ -366,53 +479,80 @@ async function playEvent(event) {
             "--member-duration",
             `${duration}ms`
         );
+
         document.documentElement.style.setProperty(
             "--ranking-duration",
             `${duration}ms`
         );
 
         if (event.type === "gift") {
+            hidePersistentRanking();
             await prepareGift(event);
             startAnimation();
             await sleep(duration);
         } else if (event.type === "member_level_up") {
-            const user = getSenderName(event).replace(/^@/, "");
+            hidePersistentRanking();
+
+            const user = getSenderName(event)
+                .replace(/^@/, "");
 
             memberTitle.textContent = String(
-                event.message || "¡FELICIDADES, @{user}!"
+                event.message ||
+                "¡FELICIDADES, @{user}!"
             ).replace("{user}", user);
 
             memberSubtitle.textContent =
-                `ALCANZASTE EL NIVEL DE MIEMBRO ${Number(event.new_level)}`;
+                `ALCANZASTE EL NIVEL DE MIEMBRO ${
+                    Number(event.new_level)
+                }`;
 
-            memberLevel.textContent = String(Number(event.new_level));
+            memberLevel.textContent =
+                String(Number(event.new_level));
 
-            const avatar = String(event.avatar_url || "");
+            const avatar =
+                String(event.avatar_url || "");
+
             if (avatar) {
                 memberAvatar.src = avatar;
             }
 
-            /* Fase 1: aviso naranja fijo durante 3 segundos. */
-            memberStage.classList.add("member-notice-phase");
-            memberStage.setAttribute("aria-hidden", "false");
-            restartAnimation(memberStage, "visible");
+            memberStage.classList.add(
+                "member-notice-phase"
+            );
+            memberStage.setAttribute(
+                "aria-hidden",
+                "false"
+            );
+            restartAnimation(
+                memberStage,
+                "visible"
+            );
 
             await sleep(MEMBER_NOTICE_DURATION_MS);
 
-            /* Fase 2: se oculta el aviso y recién empieza la nave. */
-            memberStage.classList.remove("member-notice-phase");
-            memberStage.classList.add("member-shuttle-phase");
+            memberStage.classList.remove(
+                "member-notice-phase"
+            );
+            memberStage.classList.add(
+                "member-shuttle-phase"
+            );
+
             playLevelSound(event);
-            restartAnimation(memberStage, "visible");
+
+            restartAnimation(
+                memberStage,
+                "visible"
+            );
 
             await sleep(duration);
         } else {
             if (isPersistentRanking) {
                 persistentRankingEvent = event;
-                persistentRankingFingerprint = incomingRankingFingerprint;
             }
 
-            renderRanking(event);
+            renderRanking(event, {
+                force: !isPersistentRanking
+            });
 
             if (!isPersistentRanking) {
                 await sleep(duration);
@@ -427,13 +567,16 @@ async function playEvent(event) {
     } finally {
         const permanentRankingWasShown =
             event.type === "member_level_leaderboard" &&
-            persistentRankingEvent === event;
+            isPersistentRanking;
 
         if (!permanentRankingWasShown) {
-            clearAnimation();
+            clearAnimation({
+                preserveRanking:
+                    Boolean(persistentRankingEvent)
+            });
 
             if (persistentRankingEvent) {
-                renderRanking(persistentRankingEvent);
+                showPersistentRanking();
             }
 
             await sleep(PAUSE_BETWEEN_EVENTS_MS);

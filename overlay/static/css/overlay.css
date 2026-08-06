@@ -1461,3 +1461,41 @@ body {
 .ranking-stage.ranking-persistent .crown-rotor {
     animation-iteration-count: infinite;
 }
+
+/* ==========================================================
+   PANDAIA — TOP 3 FIJO DEFINITIVO
+   ========================================================== */
+
+.ranking-stage.ranking-persistent {
+    display: flex !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+}
+
+.ranking-stage.ranking-persistent.ranking-temporarily-hidden {
+    display: none !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+}
+
+.ranking-stage.ranking-persistent .ranking-wheels {
+    opacity: 1 !important;
+    visibility: visible !important;
+}
+
+.ranking-stage.ranking-persistent .ranking-crown {
+    opacity: 1 !important;
+    visibility: visible !important;
+    animation: none !important;
+}
+
+.ranking-stage.ranking-persistent .crown-rotor {
+    animation-iteration-count: infinite !important;
+    animation-fill-mode: both !important;
+}
+
+/* Evita que una animación antigua de duración limitada
+   vuelva invisible el Top permanente. */
+.ranking-stage.ranking-persistent.visible {
+    animation: none !important;
+}
