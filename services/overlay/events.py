@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import json
+import threading
 import uuid
+from queue import Empty, Full, Queue
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
 OVERLAY_URL = "http://127.0.0.1:5050/overlay"
 OVERLAY_EVENTS_URL = "http://127.0.0.1:5050/api/events"
+OVERLAY_PUBLISH_QUEUE_LIMIT = 256
 
 ALLOWED_TYPES = {
     "gift",
@@ -195,32 +198,64 @@ def sanitize_event(
     return clean
 
 
+_overlay_publish_queue: Queue[dict[str, object]] = Queue(maxsize=OVERLAY_PUBLISH_QUEUE_LIMIT)
+
+
+def _overlay_publisher_worker() -> None:
+    while True:
+        try:
+            payload = _overlay_publish_queue.get(block=True)
+        except Empty:
+            continue
+        try:
+            request = Request(
+                OVERLAY_EVENTS_URL,
+                data=json.dumps(payload).encode("utf-8"),
+                method="POST",
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                },
+            )
+            try:
+                with urlopen(request, timeout=5) as response:
+                    response_ok = 200 <= response.status < 300
+            except (
+                HTTPError,
+                URLError,
+                TimeoutError,
+                OSError,
+            ):
+                response_ok = False
+            if not response_ok:
+                try:
+                    pass
+                except Exception:
+                    pass
+        finally:
+            _overlay_publish_queue.task_done()
+
+
+_overlay_publisher_thread = threading.Thread(
+    target=_overlay_publisher_worker,
+    name="pandaia-overlay-publisher",
+    daemon=True,
+)
+_overlay_publisher_thread.start()
+
+
 def post_overlay_event(
     payload: dict[str, object],
     opener=urlopen,
 ) -> bool:
-    clean = sanitize_event(payload)
-
-    request = Request(
-        OVERLAY_EVENTS_URL,
-        data=json.dumps(clean).encode("utf-8"),
-        method="POST",
-        headers={
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-    )
+    try:
+        clean = sanitize_event(payload)
+    except (ValueError, TypeError):
+        return False
 
     try:
-        with opener(
-            request,
-            timeout=5,
-        ) as response:
-            return 200 <= response.status < 300
-    except (
-        HTTPError,
-        URLError,
-        TimeoutError,
-        OSError,
-    ):
+        _overlay_publish_queue.put_nowait(clean)
+    except Full:
         return False
+
+    return True

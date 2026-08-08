@@ -513,8 +513,6 @@ class TikTokService:
             if not self._live_connected:
                 return
 
-            self.inspect_member_level(event)
-
             self.notify_stats(
                 self.live_state.update_likes(
                     total=event.total,

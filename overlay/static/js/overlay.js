@@ -28,6 +28,7 @@ const likesRankingWheels =
 
 let animationRunning = false;
 let pollingEnabled = true;
+let overlayEventQueue = [];
 
 const persistentRankings = {
     members: null,
@@ -679,6 +680,54 @@ async function playEvent(event) {
 }
 
 
+function queuePriority(type) {
+    const priority = {
+        "member_level_up": 0,
+        "gift": 1,
+        "member_level_leaderboard": 2,
+        "like_leaderboard": 3,
+    };
+
+    return priority[type] ?? 9;
+}
+
+
+function enqueueEvent(event) {
+    if (!event || typeof event !== "object") {
+        return;
+    }
+
+    const type = String(event.type || "").trim();
+
+    if (!type) {
+        return;
+    }
+
+    overlayEventQueue.push(event);
+    overlayEventQueue.sort((left, right) => {
+        const leftPriority = queuePriority(left.type);
+        const rightPriority = queuePriority(right.type);
+
+        if (leftPriority !== rightPriority) {
+            return leftPriority - rightPriority;
+        }
+
+        return 0;
+    });
+}
+
+
+async function dequeueEvent() {
+    const next = overlayEventQueue.shift();
+
+    if (!next) {
+        return null;
+    }
+
+    return next;
+}
+
+
 async function requestNextEvent() {
     if (!pollingEnabled) {
         return;
@@ -717,13 +766,32 @@ async function requestNextEvent() {
         const data = await response.json();
 
         if (data && data.event) {
-            await playEvent(data.event);
+            enqueueEvent(data.event);
         }
     } catch (error) {
         console.error(
             "No se pudo consultar la cola del overlay:",
             error
         );
+    }
+}
+
+
+async function playbackLoop() {
+    while (pollingEnabled) {
+        const nextEvent = await dequeueEvent();
+
+        if (nextEvent) {
+            if (animationRunning) {
+                enqueueEvent(nextEvent);
+                await sleep(25);
+                continue;
+            }
+
+            await playEvent(nextEvent);
+        } else {
+            await sleep(10);
+        }
     }
 }
 
@@ -746,3 +814,4 @@ window.addEventListener(
 
 clearTransientAnimation();
 pollingLoop();
+playbackLoop();

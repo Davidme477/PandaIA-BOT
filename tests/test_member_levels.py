@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from overlay.server import app, client_cursors, client_seen, enqueue_event, event_queue, queue_lock
 from services.overlay.events import sanitize_event
@@ -76,6 +77,29 @@ class MemberLevelTests(unittest.TestCase):
             manager.level_event({"user_id": "test", "current_level": 9, "previous_level": 8}, test=True)
             manager.ranking_event([{"user_id": "test", "current_level": 9}], test=True)
             self.assertEqual(history.count(), 0)
+
+    def test_level_history_skips_disk_write_when_payload_is_unchanged(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "members.json"
+            history = MemberLevelHistory(path, clock=lambda: 100)
+            history.observe(observation(30), event_id="seed")
+            with patch("services.tiktok.member_levels.write_settings_atomic") as write_atomic:
+                record, increased = history.observe(observation(30), event_id="same")
+                self.assertFalse(increased)
+                self.assertEqual(record["current_level"], 30)
+                self.assertEqual(write_atomic.call_count, 0)
+
+    def test_level_history_persists_when_new_level_is_authoritative(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "members.json"
+            history = MemberLevelHistory(path, clock=lambda: 100)
+            first, increased = history.observe(observation(30), event_id="seed")
+            self.assertFalse(increased)
+            second, increased = history.observe(observation(34), event_id="boost")
+            self.assertTrue(increased)
+            self.assertEqual(second["previous_level"], 30)
+            self.assertEqual(second["current_level"], 34)
+            self.assertEqual(MemberLevelHistory(path).top()[0]["current_level"], 34)
 
     def test_sanitization_and_music_exclusion(self):
         level = sanitize_event({"type": "member_level_up", "user_id": "1", "new_level": 5, "nickname": "<Ana>"})

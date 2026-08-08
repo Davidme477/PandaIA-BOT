@@ -117,32 +117,88 @@ def extract_member_observation(user: object, *, diagnostics: bool = False) -> Me
 
 class MemberLevelHistory:
     def __init__(self, path: Path = MEMBER_LEVEL_FILE, *, clock=time.time) -> None:
-        self.path = Path(path); self.clock = clock; self.lock = RLock()
+        self.path = Path(path)
+        self.clock = clock
+        self.lock = RLock()
+        self._users: dict[str, dict[str, object]] = self._load()
 
     def _load(self) -> dict[str, dict[str, object]]:
-        data = read_settings(self.path); users = data.get("users", {})
+        data = read_settings(self.path)
+        users = data.get("users", {})
         return dict(users) if isinstance(users, dict) else {}
+
+    def _persist(self) -> None:
+        write_settings_atomic(self.path, {"users": self._users})
 
     def observe(self, item: MemberObservation, *, event_id: str = "") -> tuple[dict[str, object], bool]:
         with self.lock:
-            users = self._load(); now = int(self.clock()); old = users.get(item.user_id)
+            now = int(self.clock())
+            old = self._users.get(item.user_id)
             if not isinstance(old, dict):
-                record = {**asdict(item), "previous_level": item.member_level, "current_level": item.member_level,
-                          "first_seen": now, "last_seen": now, "last_event_id": event_id}
-                users[item.user_id] = record; write_settings_atomic(self.path, {"users": users}); return record, False
-            previous = _integer(old.get("current_level")); increased = item.member_level > previous
-            record = {**old, **asdict(item), "previous_level": previous, "current_level": max(previous, item.member_level),
-                      "last_seen": now}
-            if event_id and event_id == old.get("last_event_id"): increased = False
-            if increased: record["last_event_id"] = event_id
-            users[item.user_id] = record; write_settings_atomic(self.path, {"users": users}); return record, increased
+                record = {
+                    **asdict(item),
+                    "previous_level": item.member_level,
+                    "current_level": item.member_level,
+                    "first_seen": now,
+                    "last_seen": now,
+                    "last_event_id": event_id,
+                }
+                self._users[item.user_id] = record
+                self._persist()
+                return record, False
+
+            previous = _integer(old.get("current_level"))
+            increased = item.member_level > previous
+            if event_id and event_id == old.get("last_event_id"):
+                increased = False
+
+            record = {
+                **old,
+                **asdict(item),
+                "previous_level": previous,
+                "current_level": max(previous, item.member_level),
+                "last_seen": now,
+            }
+
+            if increased:
+                record["last_event_id"] = event_id
+
+            profile_changed = (
+                str(old.get("nickname") or "") != str(item.nickname)
+                or str(old.get("avatar") or "") != str(item.avatar)
+                or str(old.get("unique_id") or "") != str(item.unique_id)
+                or str(old.get("club_name") or "") != str(item.club_name)
+                or _integer(old.get("member_level")) != item.member_level
+                or _integer(old.get("gifter_level")) != item.gifter_level
+            )
+
+            if increased or profile_changed:
+                self._users[item.user_id] = record
+                self._persist()
+            else:
+                # Mantenemos el registro en memoria, pero no reescribimos el JSON si no hubo datos nuevos.
+                self._users[item.user_id] = record
+
+            return record, increased
 
     def top(self, limit: int = 3) -> list[dict[str, object]]:
-        users = list(self._load().values())
-        return sorted(users, key=lambda row: (-_integer(row.get("current_level")), int(row.get("first_seen", 0)), str(row.get("user_id", ""))))[:limit]
+        users = list(self._users.values())
+        return sorted(
+            users,
+            key=lambda row: (
+                -_integer(row.get("current_level")),
+                int(row.get("first_seen", 0)),
+                str(row.get("user_id", "")),
+            ),
+        )[:limit]
 
-    def count(self) -> int: return len(self._load())
-    def clear(self) -> None: write_settings_atomic(self.path, {"users": {}})
+    def count(self) -> int:
+        return len(self._users)
+
+    def clear(self) -> None:
+        with self.lock:
+            self._users = {}
+            self._persist()
 
 
 class MemberLevelManager:

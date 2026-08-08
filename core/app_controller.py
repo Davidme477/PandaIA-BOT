@@ -81,6 +81,8 @@ class PandaWorker(QThread):
             music_command=str((gifts_settings or {}).get("command", "a/")),
         )
         self._last_ignored_log = 0.0
+        self._last_live_stats_emit = 0.0
+        self._latest_live_stats: LiveStats | None = None
 
     def run(self) -> None:
         try:
@@ -207,7 +209,14 @@ class PandaWorker(QThread):
         self.response_queue.controls.update_tts(values)
 
     def forward_live_stats(self, stats: LiveStats) -> None:
-        self.live_stats_changed.emit(stats)
+        self._latest_live_stats = stats
+        now = time.monotonic()
+        if now - self._last_live_stats_emit >= 0.25:
+            self.live_stats_changed.emit(stats)
+            self._last_live_stats_emit = now
+        else:
+            # Mantiene cachada la última instantánea para no perder el último estado.
+            return
 
     def forward_memory(self, snapshot: MemorySnapshot) -> None:
         if not self.stop_requested or not snapshot.connected:
