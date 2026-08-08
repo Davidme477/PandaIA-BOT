@@ -2078,7 +2078,7 @@ body {
     position: relative !important;
     z-index: 35 !important;
 }
-    /* Mostrar correctamente los nombres del Top Likes. */
+/* Mostrar correctamente los nombres del Top Likes. */
 .likes-ranking-stage .ranking-crown {
     overflow: visible !important;
 }

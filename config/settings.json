@@ -56,7 +56,7 @@
     "live_watchdog": {
         "enabled": true,
         "process_hint": "TikTok Live Studio",
-        "attach_screenshot": false,
+        "attach_screenshot": true,
         "repeat_interval": 60,
         "repeat_duration": 240
     }

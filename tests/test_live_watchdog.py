@@ -81,6 +81,56 @@ class LiveWatchdogTests(unittest.TestCase):
         self.assertIn("inactividad",normalize_detection_text("INACTIVlDAD"))
         for text in ("Live normal","actividad reciente","hola mundo"): self.assertIsNone(classify_warning(text))
 
+    def test_high_priority_real_live_inactivity_phrase(self):
+        match = classify_warning("Se ha detectado inactividad durante el LIVE")
+        self.assertIsNotNone(match)
+        self.assertEqual(match.kind, "Advertencia de inactividad")
+        self.assertTrue(match.immediate)
+
+    def test_high_priority_live_verification_phrase(self):
+        match = classify_warning("Completa la verificación en LIVE Studio dentro de 5 minutos para continuar con el LIVE actual.")
+        self.assertIsNotNone(match)
+        self.assertEqual(match.kind, "Validación")
+        self.assertTrue(match.immediate)
+
+    def test_cancelled_live_inactivity_phrase(self):
+        match = classify_warning("LIVE cancelado. Tu LIVE se canceló por inactividad.")
+        self.assertIsNotNone(match)
+        self.assertEqual(match.kind, "Advertencia de inactividad")
+
+    def test_multiline_ocr_live_inactivity_phrase(self):
+        match = classify_warning("Se ha detectado\ninactividad durante el LIVE.\nCompleta la verificación\ndentro de 5 minutos")
+        self.assertIsNotNone(match)
+        self.assertEqual(match.kind, "Advertencia de inactividad")
+
+    def test_ocr_noise_variants_normalize(self):
+        match = classify_warning("Se ha detectado inactividád duranre el LIV3")
+        self.assertIsNotNone(match)
+        self.assertEqual(match.kind, "Advertencia de inactividad")
+
+    def test_false_positives_do_not_warn(self):
+        for text in ("Actividad reciente", "Resultados del LIVE", "Información sobre el LIVE"):
+            self.assertIsNone(classify_warning(text))
+
+    def test_uia_safe_text_and_ocr_warning_can_combine(self):
+        uia_text = "Información sobre el LIVE. Objetivo del LIVE"
+        ocr_text = "Se ha detectado inactividad durante el LIVE"
+        combined = "\n".join((uia_text, ocr_text))
+        self.assertIsNotNone(classify_warning(combined))
+
+    def test_uia_warning_classification_is_not_relying_on_ocr(self):
+        match = classify_warning("Se ha detectado inactividad durante el LIVE")
+        self.assertIsNotNone(match)
+        self.assertTrue(match.immediate)
+        self.assertEqual(classify_warning("Se ha detectado\ninactividad durante el LIVE").event_id, match.event_id)
+
+    def test_same_warning_does_not_emit_a_new_event(self):
+        cycle = AlertCycle()
+        first = cycle.start("same-warning", 0)
+        second = cycle.start("same-warning", 1)
+        self.assertTrue(first)
+        self.assertFalse(second)
+
     def test_two_reads_and_high_priority(self):
         detector=ConsecutiveWarningDetector(); self.assertIsNone(detector.inspect("advertencia inactividad"))
         self.assertIsNotNone(detector.inspect("advertencia inactividad")); self.assertIsNotNone(detector.inspect("Continuar en vivo"))

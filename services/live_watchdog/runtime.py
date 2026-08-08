@@ -46,9 +46,19 @@ class LiveWatchdog(QThread):
             self._process_seen = False; self.status_changed.emit("Buscando TikTok Live Studio", "", self._now(), "")
             self._repeat_if_due("TikTok Live Studio"); self._poll_acknowledgement(); return
         self._process_seen = True; self.status_changed.emit("Supervisando", name, self._now(), "")
-        match = self.detector.inspect(self.text_reader(name))
-        if match: self.cycle.observe_present(); self.trigger_alert(match.kind, match.event_id)
-        elif self.cycle.event_id and not self.cycle.attended and self.cycle.observe_missing(): self.stop_alarm("La advertencia desapareció.")
+
+        uia_text = self._read_accessible_text(name)
+        match = self.detector.inspect(uia_text)
+        if not match:
+            ocr_text = self._read_live_studio_ocr(name)
+            if ocr_text:
+                combined_text = f"{uia_text}\n{ocr_text}" if uia_text else ocr_text
+                match = self.detector.inspect(combined_text)
+
+        if match:
+            self.cycle.observe_present(); self.trigger_alert(match.kind, match.event_id)
+        elif self.cycle.event_id and not self.cycle.attended and self.cycle.observe_missing():
+            self.stop_alarm("La advertencia desapareció.")
         self._repeat_if_due(name)
         self._poll_acknowledgement()
 
@@ -160,18 +170,38 @@ class LiveWatchdog(QThread):
     def _read_accessible_text(_process_name):
         try:
             from pywinauto import Desktop
-            windows = Desktop(backend="uia").windows(title_re=".*TikTok.*Live.*Studio.*")
-            if not windows: return ""
-            accessible = " ".join(str(item.window_text()) for item in windows[0].descendants() if item.window_text())
-            if accessible.strip(): return accessible
-        except Exception: pass
+            desktop = Desktop(backend="uia")
+            windows = desktop.windows(title_re=".*TikTok.*Live.*Studio.*")
+            if not windows:
+                return ""
+
+            accessible_chunks = []
+            for window in windows:
+                try:
+                    descendants = getattr(window, "descendants", lambda: [])()
+                    chunk = " ".join(str(item.window_text()) for item in descendants if item.window_text())
+                    if chunk.strip():
+                        accessible_chunks.append(chunk)
+                except Exception:
+                    continue
+
+            accessible = " ".join(part for part in accessible_chunks if part.strip())
+            return accessible.strip()
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _read_live_studio_ocr(_process_name):
         # OCR local y opcional: si falta la dependencia, la supervisión UIA continúa sin fallar.
         try:
             from PIL import Image
             import pytesseract
             photo = LiveWatchdog._capture_tiktok_window()
-            return pytesseract.image_to_string(Image.open(io.BytesIO(photo)), lang="spa") if photo else ""
-        except Exception: return ""
+            if not photo:
+                return ""
+            return pytesseract.image_to_string(Image.open(io.BytesIO(photo)), lang="spa").strip()
+        except Exception:
+            return ""
 
     @staticmethod
     def _capture_tiktok_window() -> bytes:
@@ -180,8 +210,16 @@ class LiveWatchdog(QThread):
             from PIL import ImageGrab
             from pywinauto import Desktop
             windows = Desktop(backend="uia").windows(title_re=".*TikTok.*Live.*Studio.*")
-            if not windows: return b""
-            rectangle = windows[0].rectangle(); image = ImageGrab.grab(
-                bbox=(rectangle.left, rectangle.top, rectangle.right, rectangle.bottom))
+            if not windows:
+                return b""
+            rectangles = [window.rectangle() for window in windows if getattr(window, "rectangle", None)]
+            if not rectangles:
+                return b""
+            left = min(item.left for item in rectangles)
+            top = min(item.top for item in rectangles)
+            right = max(item.right for item in rectangles)
+            bottom = max(item.bottom for item in rectangles)
+            image = ImageGrab.grab(bbox=(left, top, right, bottom))
             output = io.BytesIO(); image.save(output, format="PNG"); return output.getvalue()
-        except Exception: return b""
+        except Exception:
+            return b""
